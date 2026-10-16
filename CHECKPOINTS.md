@@ -1,6 +1,6 @@
 # Checkpoints
 
-Tick items as your team completes them; your consult sessions review this file.
+Tick items as your team completes them; the instructor reviews this file at each due date.
 
 ## Week 1 — due Thu 5 Nov 2026
 - [ ] Data audit complete: every file in `data/` opened, row/page counts recorded
@@ -15,7 +15,7 @@ Tick items as your team completes them; your consult sessions review this file.
 - [ ] Vision/OCR pipeline extracting from the scanned documents
 - [ ] API spend checked against budget
 
-## Week 3 — demo hardening (consults 16–19 Nov, final sprint Fri 20 Nov)
+## Week 3 — demo hardening (final sprint Fri 20 Nov)
 - [ ] Agent/tool-use layer complete; cross-source questions answered at query time
 - [ ] Guardrails in code (see HARNESS_CHECKLIST.md) and eval suite (20+ cases) passing
 - [ ] Data quality report finished

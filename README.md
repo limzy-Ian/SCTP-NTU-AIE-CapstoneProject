@@ -33,4 +33,4 @@ docker compose exec -T mysql mysql -uroot -pcapstone < data/sql/<dump>.sql
 
 ## Timeline
 
-Briefing Sat 31 Oct · Week-1 checkpoint Thu 5 Nov · Week-2 checkpoint Sat 14 Nov · Consults 16–19 Nov · Final sprint Fri 20 Nov · **Demo Sat 21 Nov, NTU@one-north**. Details: [CHECKPOINTS.md](CHECKPOINTS.md).
+Briefing Sat 31 Oct · Week-1 checkpoint Thu 5 Nov · Week-2 checkpoint Sat 14 Nov · Final sprint Fri 20 Nov · **Demo Sat 21 Nov, NTU@one-north**. Details: [CHECKPOINTS.md](CHECKPOINTS.md).

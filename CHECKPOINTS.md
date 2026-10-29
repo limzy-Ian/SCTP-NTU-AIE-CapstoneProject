@@ -22,5 +22,5 @@ Tick items as your team completes them; the instructor reviews this file at each
 - [ ] Dress rehearsal: someone hostile has tried to break the app
 - [ ] Pitch (5 min) rehearsed and timed
 
-## Demo day — Sat 21 Nov 2026, 09:00-13:00, NTU@one-north
-30 min per team: 5 setup · 5 pitch · 10 live demo (instructor plays your customer) · 8 architecture Q&A.
+## Demo day — Sat 21 Nov 2026
+Per team: 5-minute pitch · 5-minute live demo · Q&A from a judging panel role-playing your customer. Time slots to be scheduled; bring your own laptop and charger.

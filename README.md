@@ -25,7 +25,7 @@ docker compose exec -T mysql mysql -uroot -pcapstone < data/sql/<dump>.sql
 
 ## Deliverables
 
-- Working application (live demo, instructor as customer)
+- Working application (live demo; a judging panel plays your customer and asks unscripted questions)
 - Architecture documentation with **at least two Mermaid diagrams** (in `docs/`)
 - Data quality report: every trap you found and how you handled it
 - 5-minute pitch
@@ -33,4 +33,4 @@ docker compose exec -T mysql mysql -uroot -pcapstone < data/sql/<dump>.sql
 
 ## Timeline
 
-Briefing Sat 31 Oct · Week-1 checkpoint Thu 5 Nov · Week-2 checkpoint Sat 14 Nov · Final sprint Fri 20 Nov · **Demo Sat 21 Nov, NTU@one-north**. Details: [CHECKPOINTS.md](CHECKPOINTS.md).
+Briefing Sat 31 Oct · Week-1 checkpoint Thu 5 Nov · Week-2 checkpoint Sat 14 Nov · Final sprint Fri 20 Nov · **Demo Sat 21 Nov** (per-team slots to be scheduled). Details: [CHECKPOINTS.md](CHECKPOINTS.md).

@@ -1,6 +1,6 @@
 # The Harness Checklist
 
-*Capstone handout — SCTP AI Engineering, Module 5. Distribute to all teams. Companion to notebook `00_anatomy_of_an_agent_harness` (session 5.5).*
+*Capstone handout — SCTP AI Engineering, Module 5. Distribute to all teams. Companion to notebook `00_anatomy_of_an_agent_harness` (session 5.1, capstone briefing).*
 
 Your app will be graded live, by a skeptical customer, on messy data. The model will not save you; the harness will. Before demo day, your team should be able to tick every box below — and show the evidence in your repo.
 

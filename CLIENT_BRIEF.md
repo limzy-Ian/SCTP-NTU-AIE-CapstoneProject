@@ -27,16 +27,16 @@ vibration/temperature logs and tell me if they're right, in a chart I can show t
 
 ## Engagement rules (same for all teams)
 
-You are a squad of five **forward deployed engineers**. The client is non-technical.
-The instructor will role-play your client contact at the demo.
+You are a squad of **forward deployed engineers**. The client is non-technical.
+A panel of judges will role-play your client contact at the demo.
 
-**You must deliver, on presentation day (Sat 21 Nov 2026, 5 min pitch + live demo per team):**
+**You must deliver, on presentation day (Sat 21 Nov 2026; per team: 5-minute pitch, 5-minute live demo, then Q&A from the panel; time slots to be scheduled):**
 
 1. A working AI application using the LLM API endpoint provided in class (open API, key issued per team). No other paid AI services.
 2. Ingestion of ALL data source types in this package (SQL, tabular, images, documents). The app must answer from *this* data, not model memory.
 3. An architecture diagram and at least two Mermaid diagrams (e.g. data flow, sequence diagram of one query, ER diagram of your cleaned schema).
 4. A one-page data quality report: what was wrong with the client's data and what you did about it.
-5. A live demo in which the client will ask unscripted questions.
+5. A live demo in which the client (the judging panel) will ask unscripted questions.
 
 **Constraints:**
 - The raw data is too large to paste into a prompt. You are expected to build retrieval / pipelines, not a mega-prompt.

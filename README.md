@@ -34,3 +34,5 @@ docker compose exec -T mysql mysql -uroot -pcapstone < data/sql/<dump>.sql
 ## Timeline
 
 Briefing Sat 31 Oct · Week-1 checkpoint Thu 5 Nov · Week-2 checkpoint Sat 14 Nov · Final sprint Fri 20 Nov · **Demo Sat 21 Nov** (per-team slots to be scheduled). Details: [CHECKPOINTS.md](CHECKPOINTS.md).
+
+Updated docker-compose.yml and shared instruction for "6. Load the database" and check with DBearver.

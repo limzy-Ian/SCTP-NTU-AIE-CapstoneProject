@@ -7,7 +7,7 @@ customer on **Sat 21 Nov 2026**.
 ## Quick start
 
 ```bash
-git clone <this repo>
+git clone https://github.com/fde-sctp-aieng-PT-Cohort1/team7_jurong_marine.git
 cd team7_jurong_marine
 python3 -m venv .venv && source .venv/bin/activate
 cp .env.example .env          # paste in your team API key (handed out at the briefing)

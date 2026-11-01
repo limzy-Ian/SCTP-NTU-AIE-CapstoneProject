@@ -83,6 +83,9 @@ and his AI tools managed to analysed the vibrations deviations.
 
 Proposed for Sendor Vendor to update time and temperature and send to a portal that can handle telemetry data. Incorpeating Prometheus and Grafana in a docker to ensure this safety telemetry data can be display in Garfana for worksite safety and alerting.
 
+https://cloudmonitoringplatforms.com/prometheus-grafana-monitoring-guide
+
+
 ![CNC-02](assets/ianlim/CNC-02.1.png)
 ![alt text](assets/ianlim/CNC-02.png)
 

@@ -80,7 +80,7 @@ Ian Tan shared a vibration reports ![PDF](assets/ianlim/vibration_eda_findings.p
 Sensor vendor will never able to fix intime for for AI project POC.
 Use Chatgpt to analyse csv and get a Python script to normalize csv data and ingest to Mysql.
 
-[text](assets/ianlim/sensor_csv_mysql_pipeline.md)
+[Sensor CSV Cleaning and MySQL8 Ingestion steps](assets/ianlim/sensor_csv_mysql_pipeline.md)
 
 
 

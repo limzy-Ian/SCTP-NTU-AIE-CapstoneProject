@@ -74,19 +74,13 @@ Consider incorporating AI skills for the "Singapore MOM Workplace Safety Audit, 
 ![DBeaver](assets/ianlim/Verifying-MYSQL-DBeaver.jpg)
 ![Excel](assets/ianlim/Jurong_Marine_SQL_to_excel_sampling.xlsx)
 
-## Additional - BIG WIN finding - CNC-02
+## Additional Sensor data CSV
 Vendor sending mixed timestamp and temp in C/F to Csv (data\logs\vibration_temp_2026H1.csv).
+Ian Tan shared a vibration reports ![PDF](assets/ianlim/vibration_eda_findings.pdf) and his AI tools managed to analysed the vibrations deviations.
+Sensor vendor will never able to fix intime for for AI project POC.
+Use Chatgpt to analyse csv and get a Python script to normalize csv data and ingest to Mysql.
 
-Ian Tan shared a vibration reports ![PDF](assets/ianlim/vibration_eda_findings.pdf)
-and his AI tools managed to analysed the vibrations deviations.
-
-Proposed for Sendor Vendor to update time and temperature and send to a portal that can handle telemetry data. Incorpeating Prometheus and Grafana in a docker to ensure this safety telemetry data can be display in Garfana for worksite safety and alerting.
-
-https://cloudmonitoringplatforms.com/prometheus-grafana-monitoring-guide
-
-
-![CNC-02](assets/ianlim/CNC-02.1.png)
-![alt text](assets/ianlim/CNC-02.png)
+[text](assets/ianlim/sensor_csv_mysql_pipeline.md)
 
 
 

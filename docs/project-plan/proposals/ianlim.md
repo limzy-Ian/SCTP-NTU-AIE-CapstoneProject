@@ -56,20 +56,20 @@ Consider incorporating AI skills for the "Singapore MOM Workplace Safety Audit, 
 
 ## Additional Info on Module 5 Projects
 
-![Week 1 project target](../evidence/Week1-due05Nov2026.jpeg)
+![Week 1 project target](assets/ianlim/Week1-due05Nov2026.jpeg)
 
 ## Additional Info on Module 5 Projects - Data Quality
 
-![SOPs Mis-match infomation](../evidence/SOP-InfomationMismatch.jpeg)
-![Nameplate Mis-match infomation](../evidence/Nameplate-informationMismatch.jpeg)
+![SOPs Mis-match infomation](assets/ianlim/SOP-InfomationMismatch.jpeg)
+![Nameplate Mis-match infomation](assets/ianlim/Nameplate-informationMismatch.jpeg)
 
 ## Additional Info on Module 5 Projects - Data Quality Comparison with ChatGPT
 
-[Chatgpt research](../evidence/Jurong_Marine_Nameplate_Analysis.md)
+[Chatgpt research](assets/ianlim/Jurong_Marine_Nameplate_Analysis.md)
 
 ## Additional Info on Module 5 Projects - Data Quality verification with Docker - MySQL - DBeaver - EXCEL
 
-![Docker](../evidence/Docker-MySQL.jpg)
-![DBeaver](../evidence/Verifying-MYSQL-DBeaver.jpg)
-![Excel](../evidence/Jurong_Marine_SQL_to_excel_sampling.xlsx)
+![Docker](assets/ianlim/Docker-MySQL.jpg)
+![DBeaver](assets/ianlim/Verifying-MYSQL-DBeaver.jpg)
+![Excel](assets/ianlim/Jurong_Marine_SQL_to_excel_sampling.xlsx)
 

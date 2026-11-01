@@ -1,4 +1,3 @@
-Reviewed: data\images\nameplates (12 machines JPGs)
 ## Machine Data and Nameplates
 
 Reviewed the 12 machine nameplate images in `data/images/nameplates` and the 12 entries in the MySQL `machines` table.

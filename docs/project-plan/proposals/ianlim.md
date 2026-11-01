@@ -32,6 +32,8 @@ The table should be improved; this data update does not require RAG or AI. Sugge
 
 Reviewed `data/docs/sops/0000_gm_brief_email.txt`. The project should address the General Manager's requirements and the upcoming Ministry of Manpower (MOM) Workplace Safety and Health (WSH) audit, likely in Q4.
 
+![GM-Email-Requireemnt](assets/ianlim/GM-Email-AI-Requirements.jpg)
+
 The brief identifies these needs:
 
 - Make incident history queryable. The severity scale changed in July 2025: old severity 1 corresponds to new severity 5. The two scales must not be mixed.
@@ -72,4 +74,6 @@ Consider incorporating AI skills for the "Singapore MOM Workplace Safety Audit, 
 ![Docker](assets/ianlim/Docker-MySQL.jpg)
 ![DBeaver](assets/ianlim/Verifying-MYSQL-DBeaver.jpg)
 ![Excel](assets/ianlim/Jurong_Marine_SQL_to_excel_sampling.xlsx)
+
+
 

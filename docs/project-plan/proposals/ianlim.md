@@ -62,3 +62,7 @@ Consider incorporating AI skills for the "Singapore MOM Workplace Safety Audit, 
 
 ![SOPs Mis-match infomation](../evidence/SOP-InfomationMismatch.jpeg)
 ![Nameplate Mis-match infomation](../evidence/Nameplate-informationMismatch.jpeg)
+
+## Additional Info on Module 5 Projects - Data Quality Comparison with ChatGPT
+
+[Chatgpt research](../evidence/Jurong_Marine_Nameplate_Analysis.md)

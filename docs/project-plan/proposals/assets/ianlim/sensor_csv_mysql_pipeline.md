@@ -42,7 +42,7 @@ The original source timestamp, temperature value and unit remain in `sensor_read
 ```text
 team7_jurong_marine/
 ├── data/
-│   ├── raw/
+│   ├── logs/
 │   │   └── vibration_temp_2026H1.csv
 │   └── processed/
 │       ├── sensors_cleaned.csv

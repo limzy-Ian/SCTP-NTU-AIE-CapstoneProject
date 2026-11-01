@@ -84,5 +84,7 @@ Use Chatgpt to analyse csv and get a Python script to normalize csv data and ing
 
 [Sensor CSV Cleaning and MySQL8 Ingestion steps](assets/ianlim/sensor_csv_mysql_pipeline.md)
 
+[Incidents JPG Cleaning and MYSQL compare and ingest steps](assets/ianlim/incident_reports_ocr_etl.md)
+
 
 

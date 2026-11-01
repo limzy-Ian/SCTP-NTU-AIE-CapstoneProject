@@ -27,6 +27,8 @@ The table should be improved; this data update does not require RAG or AI. Sugge
 - `Grease_interval`
 - `Name_plate_JPG`
 
+[Machine Nameplate OCR to MySQL](assets/ianlim/Machine_Nameplate_OCR_to_MySQL.md)
+
 ## General Manager's Brief
 
 Reviewed `data/docs/sops/0000_gm_brief_email.txt`. The project should address the General Manager's requirements and the upcoming Ministry of Manpower (MOM) Workplace Safety and Health (WSH) audit, likely in Q4.

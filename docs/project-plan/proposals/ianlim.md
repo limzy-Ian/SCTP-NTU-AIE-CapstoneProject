@@ -53,3 +53,7 @@ Reviewed `data/docs/sops/SOP-CRANE-02.txt`. The maximum-load information in the 
 ## Additional Suggestion
 
 Consider incorporating AI skills for the "Singapore MOM Workplace Safety Audit, Incident Classification & Reporting" and analyzing the safety incidents already tracked in the system. Review with the General Manager and professor which area is more important to prioritize.
+
+![Week 1 project target](../evidence/Week1-due05Nov2026.jpeg)
+![SOPs Mis-match infomation](../evidence/SOP-InfomationMismatch.jpeg)
+![Nameplate Mis-match infomation](../evidence/Nameplate-informationMismatch.jpeg)

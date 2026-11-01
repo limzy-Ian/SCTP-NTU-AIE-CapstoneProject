@@ -1,41 +1,55 @@
 Reviewed: data\images\nameplates (12 machines JPGs)
-MYSQL\machines table (12 entries)
-Existing Columns 4:
-Machine_ID (primary key)
-Machine_name - duplicate and not unique and ambiguous. Better identify with Serial_no and Location
-Model: Brand and Model number. Better identify with Brand and Model
-Year_installed: Integer.
-Assumption: All this can be manually update if only less than 50 machines
-This table should be improved and updated (no RAG/AI required) with:
-Machine_ID (primary key)
-Serial_no (unique)
-Location
-Brand
-Model
-Year_installed
-MFG_Date
-Power
-Capacity
-Weight
-Lubicant
-Grease_interval
-Name_plate_JPG
+## Machine Data and Nameplates
 
-Reviewed data\docs\sops\0000_gm_brief_email.txt
-This project is to fullfill GM mains requirement (email SOP). MOM audit coming + what I want from the AI tool
-(0) MOM WSH audit likely in Q4.
-(1) our incident history queryable — but CAREFUL, we changed severity scale in Jul 2025, old 1 = new 5, auditors WILL catch us if we mix them up. 
-(2) Techs keep asking 'what oil this machine use' / 'what's the grease interval' — answers are on the nameplates, we photographed all of them. 
-(3) CNC-02 been feeling 'off' according to night shift — check the vibration logs? If we can show predictive maintenance to the auditor, big win.
-(4) our sensor CSV is a mess — vendor mixed timestamp formats and half the temperature in Fahrenheit.
+Reviewed the 12 machine nameplate images in `data/images/nameplates` and the 12 entries in the MySQL `machines` table.
 
-Suggestion:
-(1) safety_incidents table dont tally with JPG. Auditor red flags.
-(2) Machine Table if updated properly AI tool will be able to query already.
-(3)(4) Build AI tool to monitor vibrations_temps csv, automatically ingest universal time and temp to SQL. analyze maintenance done/cycle relation with vibration. Alerts of vibrations /temp/  threshold/ changes.
+The current table has four columns:
 
-Reviewed data\doc\sops\SOP-CRANE-02.txt
-Max load information mis-match in SOP due to manuel update. compared with data\images\nameplates jpgs.
+- `Machine_ID` (primary key)
+- `Machine_name` (duplicated, non-unique, and ambiguous; use serial number and location to identify machines)
+- `Model` (brand and model number are better represented as separate fields)
+- `Year_installed` (integer)
 
-Suggestion:
-I guess another one is to incorporate "Singapore MOM Workplace Safety Audit, Incident Classification & Reporting" AI skills and to analyse the safety incidents tracking that is currently in systems. Review with GM/prof to determine which is more critical to persuade.
+Assumption: If there are fewer than 50 machines, these details can be updated manually.
+
+The table should be improved; this data update does not require RAG or AI. Suggested columns:
+
+- `Machine_ID` (primary key)
+- `Serial_no` (unique)
+- `Location`
+- `Brand`
+- `Model`
+- `Year_installed`
+- `MFG_Date`
+- `Power`
+- `Capacity`
+- `Weight`
+- `Lubricant`
+- `Grease_interval`
+- `Name_plate_JPG`
+
+## General Manager's Brief
+
+Reviewed `data/docs/sops/0000_gm_brief_email.txt`. The project should address the General Manager's requirements and the upcoming Ministry of Manpower (MOM) Workplace Safety and Health (WSH) audit, likely in Q4.
+
+The brief identifies these needs:
+
+- Make incident history queryable. The severity scale changed in July 2025: old severity 1 corresponds to new severity 5. The two scales must not be mixed.
+- Help technicians find each machine's oil and grease interval, which are recorded on the photographed nameplates.
+- Investigate CNC-02's reported change in behavior using the vibration logs. Predictive maintenance evidence could support the audit.
+- Clean up the sensor CSV data, which contains mixed timestamp formats and temperatures recorded in both Fahrenheit and Celsius.
+
+### Suggested Actions
+
+- Reconcile the `safety_incidents` table with the incident report images; discrepancies could raise concerns during an audit.
+- Update the machine table so the AI tool can answer questions using the machine data.
+- Build an AI tool to monitor the vibration and temperature CSV, normalize timestamps and temperatures, and ingest the data into SQL.
+- Analyze the relationship between maintenance cycles and vibration, and alert on vibration or temperature thresholds and changes.
+
+## Crane SOP Review
+
+Reviewed `data/docs/sops/SOP-CRANE-02.txt`. The maximum-load information in the SOP does not match the nameplate images, possibly because the SOP was updated manually.
+
+## Additional Suggestion
+
+Consider incorporating AI skills for the "Singapore MOM Workplace Safety Audit, Incident Classification & Reporting" and analyzing the safety incidents already tracked in the system. Review with the General Manager and professor which area is more important to prioritize.

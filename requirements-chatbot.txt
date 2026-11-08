@@ -1,0 +1,4 @@
+-r requirements-nameplates.txt
+streamlit>=1.40,<2
+openai>=1.50,<3
+scikit-learn>=1.4,<2

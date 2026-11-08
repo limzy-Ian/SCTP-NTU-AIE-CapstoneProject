@@ -50,8 +50,8 @@ team7_jurong_marine/
 │       ├── sensor_quality_issues.csv
 │       ├── sensor_summary.json
 │       └── sensor_data_audit.md
-├── scripts/
-│   └── sensor_csv_to_mysql.py
+├── scripts/sensor
+│              └── sensor_csv_to_mysql.py
 └── docs/
     └── sensor_mysql_pipeline.md
 ```
@@ -71,8 +71,8 @@ python -m pip install mysql-connector-python
 
 # Run a dry run to generate all audit and cleaned output files; no DB writes
 python .\scripts\sensor_csv_to_mysql.py `
-    --input .\data\raw\vibration_temp_2026H1.csv `
-    --output-dir .\data\processed `
+    --input .\data\logs\vibration_temp_2026H1.csv `
+    --output-dir .\data\processed\sensor `
     --expected-minutes 12
 ```
 

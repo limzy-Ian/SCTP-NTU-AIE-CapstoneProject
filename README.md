@@ -58,12 +58,56 @@ retrieved evidence and source citations. With no API key it displays evidence on
 Use the classroom endpoint via `OPENAI_BASE_URL` and its supported `OPENAI_MODEL`;
 do not provision another paid service. Only selected evidence is sent to that endpoint.
 
-This is a nameplate/SOP prototype, not the full grading harness: sensor and incident
-analytics, spreadsheet ingestion, persisted conversations, durable traces/cost
-accounting and comprehensive guardrail/evaluation coverage remain to be implemented.
+The assistant retrieves reviewed/unreviewed nameplate and incident OCR, CMMS machine,
+work-order and incident rows, SQL sensor aggregates, SOP text, critical-spares workbook
+rows, processed per-image OCR JSON/raw text, per-report incident OCR, processed sensor
+summaries/gaps, and curated data-quality audits. Processed OCR and MySQL are separate
+citations so discrepancies are visible. It deliberately omits employee names and IDs.
+Raw image files are linked as visual evidence to their OCR records; images without OCR
+are reported as image-only sources and are not interpreted by the LLM. The large sensor
+CSV is queried through MySQL aggregates and processed summaries, not expanded into
+per-reading prompts. The **Sensor Trends** tab plots hourly mean or maximum vibration
+RMS and temperature for selected machines and UTC date ranges, with gap counts beside
+the charts. These plots are descriptive, not equipment diagnoses; no alert thresholds
+or healthy-machine baselines are configured.
+
+Persisted conversations, durable request traces/cost accounting, spreadsheet analytics,
+and comprehensive guardrail/evaluation coverage remain to be implemented.
 Citation validation checks source IDs, not factual entailment. Conversation state
-and token counts last only for the current Streamlit session. All real-world actions
-are out of scope; the app neither approves work nor modifies equipment records.
+and token counts are persisted in the MySQL `chat_sessions` and `chat_messages` tables.
+Saved chats are selectable from the Assistant sidebar and can be deleted there. This
+local app has no user authentication, so saved conversations are shared with anyone
+who can access the same MySQL database. All real-world actions are out of scope; the
+app neither approves work nor modifies equipment records.
+
+Use the **OCR Review** tab to inspect pending nameplate and incident extractions
+beside their source images. Enter reviewer name/initials, select a decision, and
+optionally enter field corrections as a JSON object (for example,
+`{"manufacturer":"CUSTOM"}`) before saving. Decisions and corrections are stored
+in `ocr_review_decisions`; raw OCR evidence and the CMMS master tables are unchanged.
+Only approved review values are marked human-verified in nameplate RAG evidence.
+Incident review is currently a QA queue; it does not change `safety_incidents` or
+add incident analytics to the chatbot.
+
+RAG reads the tables `machines`, `work_orders`, `safety_incidents`,
+`nameplate_assets_staging`, `incident_report_ocr`, `sensor_readings`, `sensor_gaps`,
+and `sensor_quality_issues` at question time. It reads `.txt`/`.md` files recursively
+from `data/docs`, row records from `data/tabular/*.xlsx`, and curated audit artifacts
+from `data/processed`. Sensor and incident requests are routed toward their structured
+SQL evidence; spare inventory requests toward workbook rows. Asset tags constrain the
+candidate set. Employee master data is not retrieved. If MySQL is unavailable, the app
+warns that live database evidence is incomplete rather than treating a stale CSV as
+the database result.
+
+Work-order/service-history requests (for example, "show recent servicing for CNC-02")
+are rendered as a deterministic, newest-first table with per-row citations from
+`work_orders`; up to 10 matching rows are shown. Machine, exact date, month, and year
+filters are applied before ranking. For example, "PMP-T01 on 26 July 2024" returns the
+exact day, while "PMP-T01 in July 2024" returns the whole month. This path does not
+require an LLM call. Edit root-level [RAG_SKILL.md](RAG_SKILL.md) to adjust assistant
+response requirements; it is loaded for each question and is not indexed as client
+evidence. Safety, privacy, and source-validation checks remain enforced in code. The app
+sidebar's **What I can handle** expander lists supported requests and limitations.
 
 ## Compare EasyOCR and Tesseract
 

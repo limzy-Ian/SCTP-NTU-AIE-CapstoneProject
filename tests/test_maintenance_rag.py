@@ -2,6 +2,7 @@ import unittest
 
 from scripts.maintenance_rag import input_refusal, retrieve, validate_answer
 from scripts.nameplate_ocr_import import flag_issues, parse_nameplate
+from scripts.ocr_review import effective_record
 
 
 class MaintenanceTests(unittest.TestCase):
@@ -47,6 +48,20 @@ class MaintenanceTests(unittest.TestCase):
 
     def test_private_output(self):
         self.assertIn("withheld", validate_answer("Contact user@example.com [S1]", [{"id": "S1"}]))
+
+    def test_approved_corrections_are_verified(self):
+        row = {"manufacturer": None, "review_status": "APPROVED",
+               "corrections": '{"manufacturer":"CUSTOM"}', "reviewer": "QA"}
+        values, status = effective_record(row)
+        self.assertEqual(values["manufacturer"], "CUSTOM")
+        self.assertEqual(status, "HUMAN-VERIFIED")
+
+    def test_unapproved_corrections_are_not_trusted(self):
+        row = {"manufacturer": None, "review_status": "PENDING_REVIEW",
+               "corrections": {"manufacturer": "CUSTOM"}}
+        values, status = effective_record(row)
+        self.assertIsNone(values["manufacturer"])
+        self.assertEqual(status, "UNVERIFIED OCR")
 
 
 if __name__ == "__main__":

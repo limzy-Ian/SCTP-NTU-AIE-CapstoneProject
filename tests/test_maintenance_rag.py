@@ -1,5 +1,8 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
+from app import estimate_api_cost
 from scripts.maintenance_rag import input_refusal, retrieve, validate_answer
 from scripts.nameplate_ocr_import import flag_issues, parse_nameplate
 from scripts.ocr_review import effective_record
@@ -62,6 +65,24 @@ class MaintenanceTests(unittest.TestCase):
         values, status = effective_record(row)
         self.assertIsNone(values["manufacturer"])
         self.assertEqual(status, "UNVERIFIED OCR")
+
+
+class ApiCostTests(unittest.TestCase):
+    def test_estimates_gpt_4o_mini_cost_from_input_and_output_tokens(self):
+        usage = SimpleNamespace(prompt_tokens=1000, completion_tokens=500)
+        with patch.dict("os.environ", {"OPENAI_MODEL": "gpt-4o-mini"}, clear=True):
+            self.assertAlmostEqual(estimate_api_cost(usage, "gpt-4o-mini"), 0.00045)
+
+    def test_custom_endpoint_requires_configured_rates(self):
+        usage = SimpleNamespace(prompt_tokens=1000, completion_tokens=500)
+        with patch.dict("os.environ", {"OPENAI_BASE_URL": "https://example.test"}, clear=True):
+            self.assertIsNone(estimate_api_cost(usage, "gpt-4o-mini"))
+        with patch.dict("os.environ", {
+            "OPENAI_BASE_URL": "https://example.test",
+            "OPENAI_INPUT_COST_PER_1M_USD": "1.00",
+            "OPENAI_OUTPUT_COST_PER_1M_USD": "2.00",
+        }, clear=True):
+            self.assertAlmostEqual(estimate_api_cost(usage, "custom-model"), 0.002)
 
 
 if __name__ == "__main__":

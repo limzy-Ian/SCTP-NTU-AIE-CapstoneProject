@@ -4,6 +4,7 @@ import os
 import re
 import time
 import calendar
+import math
 from datetime import datetime, time as datetime_time, timedelta
 from pathlib import Path
 
@@ -24,6 +25,31 @@ from scripts.chat_history import (
     list_chats, load_chat_messages,
 )
 from scripts.ocr_review import ensure_review_table, list_reviews, open_connection, save_review
+
+
+def api_cost_rates(model):
+    input_rate = os.getenv("OPENAI_INPUT_COST_PER_1M_USD")
+    output_rate = os.getenv("OPENAI_OUTPUT_COST_PER_1M_USD")
+    if input_rate is not None or output_rate is not None:
+        if input_rate is None or output_rate is None:
+            return None
+        try:
+            rates = float(input_rate), float(output_rate)
+        except ValueError:
+            return None
+        return rates if all(math.isfinite(rate) and rate >= 0 for rate in rates) else None
+    if not os.getenv("OPENAI_BASE_URL") and model == "gpt-4o-mini":
+        return 0.15, 0.60
+    return None
+
+
+def estimate_api_cost(usage, model):
+    rates = api_cost_rates(model)
+    if usage is None or rates is None:
+        return None
+    input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
+    output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
+    return (input_tokens * rates[0] + output_tokens * rates[1]) / 1_000_000
 
 
 def show_evidence(sources):
@@ -263,6 +289,10 @@ def render_sensor_trends():
 def render_chat():
     if "active_chat_id" not in st.session_state:
         st.session_state.active_chat_id = None
+    if "api_cost_total_usd" not in st.session_state:
+        st.session_state.api_cost_total_usd = 0.0
+    model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    cost_rates = api_cost_rates(model)
     connection = None
     try:
         connection = open_connection()
@@ -323,7 +353,18 @@ def render_chat():
                         st.session_state.active_chat_id = None
                         st.rerun()
             st.metric("Saved conversations", len(conversations))
-            st.caption(f"Model: {os.getenv('OPENAI_MODEL', 'gpt-4o-mini')}")
+            st.caption(f"Model: {model}")
+            st.metric(
+                "Estimated API cost (session)",
+                f"${st.session_state.api_cost_total_usd:.6f}" if cost_rates else "Not configured",
+            )
+            if cost_rates:
+                st.caption(
+                    f"Rates: ${cost_rates[0]:g} input / ${cost_rates[1]:g} output per 1M tokens. "
+                    "Session total resets when this Streamlit session ends."
+                )
+            else:
+                st.caption("Set OPENAI_INPUT_COST_PER_1M_USD and OPENAI_OUTPUT_COST_PER_1M_USD for this endpoint/model.")
 
         messages = load_chat_messages(connection, active_id) if active_id else []
         connection.close()
@@ -346,6 +387,7 @@ def render_chat():
     history = [{"role": message["role"], "content": message["content"]}
                for message in messages[-6:]]
     sources, warnings, tokens = [], [], 0
+    request_cost = None
     started = time.perf_counter()
     answer = input_refusal(question)
     ambiguous_date = partial_work_order_date(question)
@@ -394,7 +436,7 @@ def render_chat():
                     )
                     evidence = serialize_evidence(sources)
                     response = client.chat.completions.create(
-                        model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                        model=model,
                         temperature=0, max_tokens=700,
                         messages=[{"role": "system", "content": load_system_prompt()}]
                         + history + [{"role": "user", "content":
@@ -402,13 +444,17 @@ def render_chat():
                     )
                     answer = validate_answer(response.choices[0].message.content or "", sources)
                     tokens = response.usage.total_tokens if response.usage else 0
+                    request_cost = estimate_api_cost(response.usage, model)
+                    if request_cost is not None:
+                        st.session_state.api_cost_total_usd += request_cost
                 except OpenAIError:
                     answer = "The AI endpoint is unavailable. I could not generate an answer; review the retrieved evidence below."
     for warning in warnings:
         st.warning(warning)
     st.markdown(answer)
     show_evidence(sources)
-    st.caption(f"{len(sources)} sources / {time.perf_counter() - started:.1f}s / {tokens} API tokens")
+    cost_text = f" / ~${request_cost:.6f}" if request_cost is not None else ""
+    st.caption(f"{len(sources)} sources / {time.perf_counter() - started:.1f}s / {tokens} API tokens{cost_text}")
 
     try:
         connection = open_connection()

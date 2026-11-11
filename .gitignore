@@ -2,7 +2,7 @@
 # client data (download from NTULearn, unzip into data/)
 data/*
 !data/README.md
-docs/project-plan/proposals/ianlim
+docs/project-plan/proposals/assets/ianlim/*
 
 # secrets
 .env

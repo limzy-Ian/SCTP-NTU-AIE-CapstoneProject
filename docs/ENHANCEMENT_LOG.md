@@ -283,3 +283,33 @@ Known weakness: in retrieval mode N6 passes although the OCR misses CNC-01 and C
 - **Total eval spend:** USD 0.1337.
 - **Main finding:** the model often drops counts, IDs and caveats that are in the computed facts. The retrieval-mode template carries them. Not fixed in this phase (stop-and-report).
 - Projections were about 20% low because retries are not projected.
+
+## Phase 5b: keep the computed figures
+
+### What changed
+- `jm_rag/key_figures.py`: for each kind of question, the figures in the computed facts that answer it are marked as required (counts, totals, most-expensive ID and cost, not-closed counts and IDs, counts per type or year, worst-case count and IDs, level counts, near misses with lost days, parts below minimum or out of stock, the month a vibration rise starts, machines per lubricant grade, Fahrenheit conversions) plus caveats written in the facts (unconfirmed scale mapping, assumed currency, data stored in Celsius, data ends 30 Jun 2026). Values are read out of the code-written facts text, so they always pass the number check.
+- `jm_rag/drafting.py` (model path moved out of `pipeline.py`): after the draft, code checks every required value is stated. On a miss the single retry lists what is missing (with the value and its [S#]). If the retry still misses values but passes every other check, the model's answer is kept and code appends "Key figures (computed by code): label: value [S#]; ...". The template is used only when the retry breaks another check. An SOP the answer cites but does not name is named by code in a "Source:" line, without a retry.
+- `jm_rag/facts.py`: a Fahrenheit question gets code-converted values ("stored in Celsius; converted by code to Fahrenheit").
+- Prompt: state every figure from the computed facts that answers the question, with its [S#], including the caveats; name the SOP ID; never say whether a machine is in good shape, healthy or safe, not even in the negative.
+- Template: shows only the facts that answer the question (each group's header, clauses holding a required value, clauses on a topic the question names) and, for SOP, audit and monthly sensor sources, the lines matching the question (a procedure question gets the whole short SOP).
+- Runner: `must_include` is checked against the answer text only, in every mode (retrieval mode no longer accepts a value found only in the evidence). Projections include 1.3x for retries. The summary also prints the main set without the OCR data-error cases.
+- Tests: `tests/test_key_figures.py` (18): required values per question kind, `stated()` number boundaries, the appended line passing the number check, the three paths with a mock model that drops values (complete first answer: 1 call; retry restores: 2 calls; still missing: 2 calls and the appended line; usage and cost for each), unknown price, template still used for other problems, invented number still fails, SOP naming without a retry, and the template showing only relevant facts. One pipeline example case was changed deliberately: "answer: severity scale note" now expects 2 calls and the Key figures line, because its reply leaves out the worst-case count.
+
+### Wording failures (item 5)
+- V9 (Fahrenheit): in Phase 5 the model computed Fahrenheit values itself, the number check rejected them twice, and the template (which says `temperature_avg_c`, not "Celsius") answered. General fix: code converts to Fahrenheit and says the data is stored in Celsius. Still failing after the fix, see below.
+- Q1 ("Is the compressor in good shape?"): the model wrote "cannot be concluded that the compressor is in good shape" and speculated on the cause. The case's `must_not_include` is a substring check, so a negated phrase also fails it. General fix: the prompt now forbids any condition judgement, even negated. The case was not edited. Still failing, see below.
+- Q18 ("Summarise the lockout steps"): the model cited SOP-LOTO-01 but never named it. General fix: code names a cited SOP. Q18 passes now.
+
+### Results
+- Unit tests: 502, all pass. Offline: all pass. Retrieval: main 64/69 (tier 1 29/29, tier 2 24/27, tier 3 11/13), added 8/8, manager 18/20, legitimate 72/72, hostile 40/40. The stricter answer-only check exposed N6 as an OCR data error (it had passed on an unrelated substring).
+- E2e tier 1 (once): projected USD 0.0366, actual USD 0.0413. Main 29/29, added 5/5, manager 10/11 (Q3), refusals 4/4 with no model call.
+- E2e full set (once): projected USD 0.0705, actual USD 0.0720. With the OCR data-error cases: main 62/69 (tier 1 28/29, tier 2 23/27 = 85%, tier 3 11/13). Without N4, N6, N10: main 62/66 (tier 1 28/29, tier 2 23/24 = 96%, tier 3 11/13). Added 8/8, manager 17/20, refusals 8/8 with no model call.
+- Phase 5b spend USD 0.1133; total eval spend USD 0.2470.
+
+### Remaining failures and causes
+- W1 (tier 1) and V6: the answer gives the data end as `2026-06-30`; the case looks for "30 Jun". `stated()` accepts the ISO form, so code did not append it. Content is right, format differs. A general fix would be a prompt rule to write dates as "30 Jun 2026" and making that the only accepted form for the data-end caveat.
+- V9: the answer wrote "°C", which `stated()` accepts for the Celsius caveat, so the word "Celsius" was not added. Fix: accept only "Celsius".
+- Q1: the model still writes "does not support a conclusion that the compressor is in good shape" despite the prompt rule. The case's substring check fails on a negated sentence.
+- Q3, Q15, X4: pipeline gaps (summary has no oil conflict; machines without sensors not listed; cross-source question).
+- N4, N6, N10: OCR data errors (fix via OCR Review).
+These were found after the approved reruns and are not changed yet, so the results above match the committed code.

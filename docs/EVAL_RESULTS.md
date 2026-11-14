@@ -44,3 +44,18 @@ Projected USD 0.0705; actual USD 0.0720 (109 calls, 398,628 prompt + 20,371 comp
 ### Spend
 
 Phase 5b USD 0.1133. Total eval spend USD 0.2470 (`logs/spend.jsonl`, source "eval"), including 86 calls in Phase 5 that never reached the API and cost nothing.
+
+## End to end, Phase 5c (tier 1, once)
+
+Projected USD 0.0368 (1.3x for retries); actual USD 0.0399 (57 calls, 219,126 prompt + 11,749 completion tokens).
+
+| Set | Passed |
+|---|---|
+| main tier 1 | 29/29 |
+| added tier 1 | 5/5 |
+| manager tier 1 | 10/11 |
+| refusals | 4/4, no model call |
+
+W1 now passes (the answer writes "30 Jun 2026"); manager Q1 now passes (no condition judgement). Remaining tier 1 failure: manager Q3 (CNC-02 summary has no oil conflict; pipeline gap). V3 passed on the template: the model's answer was rejected twice and code answered. Tier 2 and 3 cases (V6, V9) were not rerun.
+
+Total eval spend: USD 0.2870.

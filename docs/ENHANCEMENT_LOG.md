@@ -313,3 +313,11 @@ Known weakness: in retrieval mode N6 passes although the OCR misses CNC-01 and C
 - Q3, Q15, X4: pipeline gaps (summary has no oil conflict; machines without sensors not listed; cross-source question).
 - N4, N6, N10: OCR data errors (fix via OCR Review).
 These were found after the approved reruns and are not changed yet, so the results above match the committed code.
+
+## Phase 5c: date format, Celsius, condition judgements
+
+- Prompt: write dates as "30 Jun 2026", never "2026-06-30". The data-end caveat now accepts only "30 Jun 2026"; the Celsius caveat accepts only the word "Celsius" (not "°C").
+- `validator.CONDITION_JUDGEMENTS` (one list): "in good shape", "good condition", "healthy", "safe to run", "safe to use", "no problems", "working fine" and similar. For a question flagged `inference_request`, a draft using any of them, even in a negated sentence, fails the post-check; the retry gets the phrases and the reason; if the retry uses one again, the template answers. Other questions are not checked ("no problems recorded in its nameplate fields" is fine there). "safe working load" and "condition" alone are not judgements.
+- Tests: `tests/test_condition_check.py` (9): every listed phrase, negated sentences, legitimate sentences that pass, retry-then-keep, negated twice then template, not applied to other questions, the date rule in the prompt, the data-end and Celsius options.
+- No case edited. Unit tests 511, all pass. Offline and retrieval unchanged from 5b (retrieval main 64/69, tier 1 29/29; 64/66 without N4, N6, N10).
+- E2e tier 1, once: projected USD 0.0368, actual USD 0.0399. Main 29/29, added 5/5, manager 10/11 (Q3), refusals 4/4 with no model call. W1 and Q1 now pass. V3 passed on the template answer. Total eval spend USD 0.2870.

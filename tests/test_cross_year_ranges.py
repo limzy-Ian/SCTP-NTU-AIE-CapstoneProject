@@ -47,6 +47,15 @@ class CrossYearWindowTests(unittest.TestCase):
         self.assertIn("mixes a month with a range of years", date_clarification("July 2024 to 2025"))
         self.assertIn("mixes a year with a month", date_clarification("2024 to July 2025"))
 
+    def test_digits_of_a_machine_tag_are_not_read_as_a_day(self):
+        # Found by eval O19: "TST-01 July 2024 to August 2025" was read as the single day 1 July 2024.
+        self.assertEqual(parse_date_window("work orders for TST-01 July 2024 to August 2025"),
+                         (date(2024, 7, 1), date(2025, 9, 1)))
+        self.assertEqual(parse_date_window("CNC-02 July 2024"), (date(2024, 7, 1), date(2024, 8, 1)))
+        from jm_rag.dates import partial_work_order_date
+        self.assertIsNone(partial_work_order_date("work orders for CNC-02 July"))
+        self.assertEqual(partial_work_order_date("work orders on 26 July"), (26, 7, "26 July"))
+
     def test_a_full_range_next_to_a_bad_day_still_asks_about_the_bad_day(self):
         self.assertIn("that day does not exist", date_clarification("31 Feb 2024 and July 2024 to August 2025"))
 

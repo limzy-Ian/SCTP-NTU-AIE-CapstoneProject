@@ -214,3 +214,45 @@ Items 6 and 7 were done earlier. Each fix flipped its pinned `ODD:` test deliber
 - `dates.parse_date_window` now reads a month and year on both ends ("July 2024 to August 2025", "Jul 2024 - Mar 2025", "jul2024 - mar2025", also en and em dashes, "through", "until"). The window runs from the first day of the first month to the end of the last month. The pipeline, the retrieval filter and the computed facts all use it, so "work orders July 2024 to August 2025" is answered, not asked about.
 - A range that ends before it starts ("August 2025 to July 2024") gives no window and a clarifying question. The mixed forms from fix 1 ("July 2024 to 2025", "2024 to July 2025") still ask; the check for them no longer misreads the year inside a full range as a stray year. An impossible day next to a full range still asks about the day.
 - `tests/test_cross_year_ranges.py`: 11 tests. This also closes the gap listed under fix 1 in the Phase 4b step 3 entry.
+
+## Phase 5: Eval suite (offline and retrieval only; e2e not run)
+
+Human decisions (Section 10), 14 Nov 2026: commit the eval cases with only machine IDs, part numbers, counts and similar values (no names, no incident-form free text); stay on unittest; cap for one model-backed eval run is USD 1, print the projection first and ask before any run above it. Do not run e2e yet.
+
+### What was added
+- `evals/`: `cases.yaml` (69: 29/27/13 by tier, 7 `no_llm` refusals), `manager_cases.yaml` (20, held out), `legit_regression.yaml` (72, generated from `tests/data/legit_questions.txt`), `offline_cases.yaml` (20 fixture cases with scripted model replies), `hostile.py` (23 ported + 17 own, including an employee-code incident count, an initials request, and two benign questions about the fixture record that carries an injected instruction), `checks.py`, `run.py` (modes `offline`, `retrieval`, `e2e`; `--tier`, `--id`, `--set`, `--file`, `--repeat`, `--show`, `--cap`, `--yes`, `--project-only`), `README.md`.
+- Cost: per-case calls, tokens and cost, totals, JSON output; e2e calls go to `logs/spend.jsonl` tagged `source: eval`; projection before e2e from the real prompt sizes; a run projected above the cap stops unless `--yes`. `--project-only` never creates a model client (tested).
+- `docs/eval_rebaseline.md` (every case that differs from the reference), `docs/EVAL_RESULTS.md` (latest counts and failures).
+- `tests/test_evals.py` (17 tests: checks, hostile judge, case-file counts and privacy, cost guard, offline mode end to end).
+
+### Pipeline changes found by the main set (main set only; the manager set was not used)
+1. Spares rows listed for "CNC-01/02/03" or "WELD-01/02" now carry each machine as a tag. `ALL` is never expanded. A "what spares do we hold for X" question keeps the `ALL` rows and raises a "listed for ALL, unresolved" conflict.
+2. Words of a machine's name and model ("compressor", "milling", "overhead") pick that machine when no tag is given. "the lathe" (three machines) asks which one. SOP questions are excluded from this.
+3. Sensor words: "running off", "drifting", "abnormal". "breakdowns" is a work-order word and filters by work-order type. Spares searches add spare-part words; a part number in the question (BRG-6310) makes it a spares question.
+4. Ranked results are interleaved across the topics a question asks about, so one topic cannot fill every slot.
+5. Computed facts extended: incidents by year, by machine (with the most), by how reported, with a scanned form, near misses with lost days, severity normalised to one scale (5 = worst) with the worst-case IDs and the misleading raw counts; work orders not closed (with IDs when few), most expensive and cheapest; spares parts listed, out of stock, "no currency stated, SGD assumed"; sensor months where vibration rose more than 10% (with month names); lubricant by machine grouped by grade; every facts source ends with "The data ends on 30 Jun 2026."
+6. Conflicts: the spares `ALL` lubricant rule now also fires when no plate in the evidence confirms it and the plant's plates read more than one grade; near miss with lost days; CMMS severity not on the scanned form (only for severity or reliability questions); an SOP that mentions a dated incident the records do not hold (only for crane, sling, lift, load or incident questions). `conflicts_records.py` was split out of `conflicts.py`.
+7. Gaps (outcome `abstain`): a nameplate field that the OCR did not read or flagged as implausible (WELD-01 capacity), unless the raw OCR text has the value next to its label, in which case that reading is reported as unverified; an SOP asked for on a topic no SOP covers (hot work); a sensor question about shifts (the evidence is monthly); whether two employee codes are one person.
+8. New source "Employee data quality (codes only)": groups of employee codes that share a full name. The name is used inside the SQL to group and is never selected.
+9. Follow-ups: "and in 2026?" and "and CNC-03?" rewrite the previous question's year or machine.
+10. Count, total, "most", "per" and "each" questions go to the facts path; a question that also asks for a procedure or oil is not turned into a work-order table.
+11. Bug: "TST-01 July 2024" was read as the day 1 July 2024 (the tag's digits). Dates now need the day not to follow a word character or dash. Test added.
+12. Money values such as "$48" are parsed as numbers.
+
+### Tests changed deliberately
+- `test_facts.test_a_question_about_something_else_has_no_facts` asserted that a lubricant question had no facts. Lubricant questions now get lubricant facts, so it became `test_a_lubricant_question_gets_lubricant_facts_only` (asserts the lubricant facts and no work-order or incident facts), plus a new no-facts test using a serial-number question.
+- `test_retrieval_gaps.test_a_machine_whose_plate_matches_all_still_gets_the_all_conflict` now expects the computed facts source beside the nameplate and spares row.
+- No characterization test was changed.
+
+### Results
+- Unit tests: 467, all pass.
+- Offline: offline 20/20, refusals 9/9 with 0 model calls, legitimate 72/72, hostile 40/40. Exit 0.
+- Retrieval: main 68/69 (tier 1 29/29, tier 2 27/27, tier 3 12/13), manager 15/20 (tier 1 7/11, tier 2 8/9), legitimate 72/72, hostile 40/40, refusals 8/8 with 0 model calls. Exit 0. Failures: X4 (tier 3) and manager Q3, Q6, Q8, Q15, Q20, listed in `docs/EVAL_RESULTS.md`.
+- Projected e2e cost (no model called): all 89 cases USD 0.047; tier 1 with `--repeat 2` USD 0.046. Worst case with retries about twice that. Well under the USD 1 cap. Waiting for approval.
+
+### Open issues
+- Privacy: while checking the spares currency I printed the workbook's first rows to the terminal. The title row holds a storeman's first name, so one first name appeared in the terminal output. It is not in any loaded source (the loader starts at the header row) and nothing was written to a file. It is a single word, so the guard's term list (full names only) does not screen it. Adding it to `data/guard/extra_terms.txt` would screen it; that needs a decision because a one-word term can block unrelated text.
+- Q20 shows a false positive in the new "the <word>" clarification ("the crane sling"). Not fixed because the manager set is held out; it should be fixed with a main-set or unit case first.
+- Modules over 300 lines: `conflicts.py` 334, `facts.py` 314, `pipeline.py` 309, `evals/run.py` 305. Each holds one concern; splitting further would scatter related rules.
+- `retrieval.py` has two unused locals (`exact_work_order_date`, `work_order_intent` in `retrieve`).
+- The `.env` points at the public OpenAI endpoint (`OPENAI_BASE_URL` empty, `gpt-4o-mini`), not a classroom endpoint; the projection uses the configured 0.15 / 0.60 rates.

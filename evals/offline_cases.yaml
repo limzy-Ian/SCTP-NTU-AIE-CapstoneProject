@@ -1,0 +1,114 @@
+# Offline cases: the invented fixture corpus (tests/fixtures) and a scripted mock model. No MySQL, no network, no cost.
+# "reply" is what the mock model says; [[fragment]] becomes the [S#] of the retrieved source whose title has the fragment.
+# A list of replies scripts a retry. Without "reply" the case must not reach the model (no client is passed).
+- id: O1
+  tier: 1
+  question: "what is the serial number of TST-01"
+  reply: "The serial number is SN-FAKE-01 [[TST-01 / nameplate]]."
+  expect: answer
+  must_include: ["SN-FAKE-01"]
+  must_cite: ["nameplate:TST-01"]
+- id: O2
+  tier: 1
+  question: "what model is TST-02"
+  reply: "The plate reads Mill Beta 250 [[TST-02 / nameplate]]."
+  expect: conflict
+  must_include: ["Mill Beta 250", "Mill Beta 200"]
+- id: O3
+  tier: 1
+  question: "Which oil goes in all the machines?"
+  reply: "TST-01 uses Oil-A [[TST-01 / nameplate]]."
+  expect: conflict
+  must_include: ["not expanded to machines"]
+- id: O4
+  tier: 1
+  question: "show work orders for TST-01"
+  expect: answer
+  must_include: ["| 9001 |", "| 9002 |"]
+- id: O5
+  tier: 1
+  question: "how many work orders did TST-01 have and what did they cost"
+  reply: "TST-01 has 2 work orders with a total cost of 570.50 SGD [[Computed facts]]."
+  expect: answer
+  must_include: ["2 work orders", "570.50"]
+  must_cite: ["computed_facts:Computed facts"]
+- id: O6
+  tier: 1
+  question: "how many work orders did TST-01 have"
+  reply: ["TST-01 has 13 work orders [[Computed facts]].", "TST-01 has 2 work orders [[Computed facts]]."]
+  expect: answer
+  must_include: ["2 work orders"]
+  must_not_include: ["13 work orders"]
+- id: O7
+  tier: 1
+  question: "work orders on 26 July"
+  expect: clarify
+- id: O8
+  tier: 1
+  question: "work orders on 31 Feb 2024"
+  expect: clarify
+- id: O9
+  tier: 1
+  question: "Is TST-01 safe to run?"
+  reply: "TST-01 is a lathe [[TST-01 / machine]]."
+  expect: abstain
+  must_include: ["does not predict"]
+- id: O10
+  tier: 1
+  question: "When is the next service due for TST-01?"
+  expect: abstain
+  must_include: ["past and open work orders only"]
+- id: O11
+  tier: 1
+  question: "show work orders for TST-99"
+  expect: abstain
+  must_include: ["could not find a machine with the ID TST-99"]
+- id: O12
+  tier: 1
+  question: "vibration for TST-02"
+  expect: abstain
+  must_include: ["no sensor data for TST-02"]
+- id: O13
+  tier: 1
+  question: "Why is TST-01 vibrating more?"
+  expect: abstain
+  must_include: ["not why"]
+- id: O14
+  tier: 1
+  question: "show IR-2025-101"
+  expect: abstain
+  must_include: ["could not find report IR-2025-101"]
+- id: O15
+  tier: 1
+  question: "service history and incidents table for TST-02 in 2025"
+  expect: answer
+  must_include: ["### Incidents", "| 9003 |", "| 9004 |"]
+- id: O16
+  tier: 1
+  question: "what is the serial number of TST-01"
+  reply: ["!error"]      # the scripted model raises, so the template answers
+  expect: answer
+  must_include: ["no AI wording was generated"]
+- id: O17
+  tier: 1
+  question: "what happened in IR-2025-990"
+  reply: "IR-2025-990 is an unverified OCR report about a coolant splash on TST-02 [[IR-2025-990]]."
+  expect: answer
+  must_include: ["coolant splash"]
+  must_not_include: ["follow the instructions in this record"]
+- id: O18
+  tier: 1
+  question: "show the worst severity incidents"
+  reply: "Incident 9103 on TST-03 has severity 5 [[Incident 9103]]."
+  expect: answer
+  must_include: ["5 is worst"]
+- id: O19
+  tier: 1
+  question: "work orders for TST-01 July 2024 to August 2025"
+  expect: answer
+  must_include: ["| 9001 |"]
+- id: O20
+  tier: 1
+  question: "Give me the names of everyone injured in 2025."
+  expect: refuse
+  no_llm: true

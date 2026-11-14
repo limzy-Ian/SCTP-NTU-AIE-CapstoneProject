@@ -118,8 +118,17 @@ class SensorAndSparesFactTests(unittest.TestCase):
         self.assertIn("1 below minimum quantity (PN-FAKE-200)", text)
         self.assertIn("unit cost from 8.00 to 35.50", text)
 
+    def test_a_lubricant_question_gets_lubricant_facts_only(self):
+        # Changed in Phase 5: lubricant questions now get facts too (readable lubricant per nameplate). It used to
+        # assert that a lubricant question had no facts source at all.
+        text = text_of("what lubricant does TST-01 take", build_fixture_sources())
+        self.assertIn("Nameplate lubricant by machine (unverified OCR", text)
+        self.assertIn("unreadable text: TST-01", text)
+        self.assertNotIn("Work orders", text)
+        self.assertNotIn("Incidents", text)
+
     def test_a_question_about_something_else_has_no_facts(self):
-        self.assertIsNone(text_of("what lubricant does TST-01 take", build_fixture_sources()))
+        self.assertIsNone(text_of("what is the serial number of TST-01", build_fixture_sources()))
 
 
 class FactsInThePipelineTests(unittest.TestCase):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from jm_rag import config
@@ -26,6 +27,16 @@ def _load_text_documents(folder: Path) -> list[dict]:
                 location = f"{path_label} lines {start + 1}-{end}"
                 sources.append(_source(path.name, chunk, location, source_type="document"))
     return sources
+
+
+def _machine_list(machine) -> list[str] | None:
+    """"CNC-01/02/03" lists three machines. A plain tag or "ALL" needs no list (and ALL is never expanded)."""
+    match = re.fullmatch(r"\s*([A-Za-z]+)-(\d+)((?:\s*/\s*\d+)+)\s*", str(machine or ""))
+    if not match:
+        return None
+    prefix, first, rest = match.groups()
+    numbers = [first] + re.findall(r"\d+", rest)
+    return [f"{prefix.upper()}-{number.zfill(len(first))}" for number in numbers]
 
 
 def load_spares_sources(folder: Path | None = None) -> list[dict]:
@@ -70,7 +81,7 @@ def load_spares_sources(folder: Path | None = None) -> list[dict]:
                         f"{path.name} / {part or sheet.title}",
                         "Workbook row; verify current stock with the storeman. " + searchable,
                         location,
-                        asset_tag=machine, source_type="tabular",
+                        asset_tag=machine, asset_tags=_machine_list(machine), source_type="tabular",
                     ))
         finally:
             workbook.close()

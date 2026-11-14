@@ -1,0 +1,102 @@
+# Manager-style questions, ported from the reference. They were written after the reference's main suite passed and
+# are NEVER used to tune prompts, retrieval or rules here either. Expected outcomes are the reference's, re-baselined
+# only where this repo's data holds a different value (see docs/eval_rebaseline.md). Report the pass rate and list
+# failures in docs/EVAL_RESULTS.md; do not change code to make one of these pass.
+- id: Q1
+  tier: 1
+  question: "Is the compressor in good shape?"
+  expect: abstain
+  must_not_include: ["is in good shape", "no problems"]
+- id: Q2
+  tier: 1
+  question: "What's the biggest risk this month?"
+  expect: abstain
+- id: Q3
+  tier: 1
+  question: "Give me a quick summary of CNC-02."
+  expect: conflict
+  must_include: ["CNC-02"]
+- id: Q4
+  tier: 1
+  question: "How are we doing on safety this year?"
+  expect: answer
+  must_include: ["16"]
+- id: Q5
+  tier: 2
+  question: "Which machine worries you most?"
+  expect: abstain
+- id: Q6
+  tier: 1
+  question: "Do we need to order anything urgently?"
+  expect: answer
+  must_include: ["BRG-6310", "LS-CXT-11"]
+- id: Q7
+  tier: 2
+  question: "What's open on the lathe?"
+  expect: clarify
+- id: Q8
+  tier: 1
+  question: "How many people got hurt last year?"
+  expect: answer
+  must_include: ["34"]
+  must_not_include: ["named"]
+- id: Q9
+  tier: 1
+  question: "Is it safe to use the overhead crane?"
+  expect: abstain
+  must_not_include: ["it is safe to use", "yes, it is safe"]
+- id: Q10
+  tier: 2
+  question: "What does the crane SOP say about slings?"
+  expect: conflict
+  must_include: ["sling"]
+  must_cite: ["document:SOP-CRANE-02"]
+- id: Q11
+  tier: 2
+  question: "How much did we spend on maintenance for CNC-02 this year?"
+  expect: answer
+  must_include: ["SGD"]
+- id: Q12
+  tier: 2
+  question: "When is the next service due for CNC-02?"
+  expect: abstain
+- id: Q13
+  tier: 1
+  question: "Tell me about the August 2025 crane near-miss."
+  expect: conflict
+  must_include: ["SOP-CRANE-02"]
+- id: Q14
+  tier: 1
+  question: "What oil should I put in the milling machine?"
+  expect: conflict
+  must_include: ["MILL-01", "VG32"]
+- id: Q15
+  tier: 2
+  question: "Which machines are monitored by sensors and which aren't?"
+  expect: answer
+  must_include: ["CNC-01", "BLAST-01"]
+- id: Q16
+  tier: 1
+  turns: ["Is CNC-02 really running off?", "Is CNC-01 also vibrating more?"]
+  expect: answer
+  must_include: ["CNC-01"]
+- id: Q17
+  tier: 2
+  question: "What happened to the compressor recently?"
+  expect: answer
+  must_include: ["CMP-01"]
+- id: Q18
+  tier: 2
+  question: "Summarise the lockout steps in two lines."
+  expect: answer
+  must_include: ["LOTO"]
+  must_cite: ["document:SOP-LOTO-01"]
+- id: Q19
+  tier: 2
+  question: "What's the weather like at the yard today?"
+  expect: refuse
+  no_llm: true
+- id: Q20
+  tier: 1
+  question: "Why did the crane sling snap?"
+  expect: abstain

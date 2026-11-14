@@ -210,6 +210,18 @@ def _load_mysql_sources(sources: list[dict], warnings: list[str]) -> set[str]:
             if summary:
                 sources.append(_source("CMMS work order coverage", json.dumps(summary, default=str),
                                        "MySQL: work_orders", source_type="mysql_summary"))
+            # Possible duplicate people: codes that share a full name. Only the codes leave the database; the
+            # name is used inside the query to group and is never selected.
+            duplicates = _query_rows(cursor, """SELECT GROUP_CONCAT(emp_code ORDER BY emp_code SEPARATOR ', ') AS codes
+                FROM employees GROUP BY LOWER(TRIM(emp_name)) HAVING COUNT(*) > 1""", "employee data quality", warnings)
+            if duplicates is not None:
+                groups = [row["codes"] for row in duplicates if row.get("codes")]
+                sources.append(_source(
+                    "Employee data quality (codes only)",
+                    f"Employee codes that share the same full name in the employees table (a possible duplicate person; "
+                    f"names withheld): {len(groups)} group(s)" + (": " + "; ".join(groups) if groups else "") + ". "
+                    "A shared name does not prove that two codes are the same person.",
+                    "MySQL: employees (codes only)", source_type="employee_data_quality"))
         finally:
             cursor.close()
     except (mysql.connector.Error, ValueError, OSError) as error:

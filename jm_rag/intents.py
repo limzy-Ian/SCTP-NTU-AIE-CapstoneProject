@@ -26,6 +26,6 @@ def is_aggregate_question(question: str) -> bool:
     """Counts, totals and extremes. These go to the model with the computed facts, not to a history table."""
     return bool(re.search(
         r"\b(?:how many|number of|count of|total|in total|sum of|average|mean|how much|altogether|combined|"
-        r"cheapest|most expensive|costliest|highest|lowest|longest|shortest|cost|spend|spent)\b",
+        r"cheapest|most expensive|costliest|highest|lowest|longest|shortest|cost|spend|spent|most|fewest|per|each)\b",
         question, re.I,
     ))

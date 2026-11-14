@@ -57,3 +57,41 @@ def question_tags(question: str, sources: list[dict]) -> tuple[set[str], set[str
     if not known:
         return written, set()
     return {tag for tag in written if tag in known}, {tag for tag in written if tag not in known}
+
+
+GENERIC_WORDS = {"test", "machine", "machining", "unit", "bay", "rig", "with", "from"}
+DOCUMENT_WORDS = re.compile(r"\b(?:sops?|procedures?|permit|lockout|loto|entering|entry|gas test)\b", re.I)
+
+
+def word_aliases(sources: list[dict]) -> dict[str, set[str]]:
+    """Words of the machine names and models ("compressor", "overhead", "lathe") mapped to the machines that carry them."""
+    words: dict[str, set[str]] = {}
+    for source in sources:
+        if not (source.get("machine_record") and source.get("asset_tag")):
+            continue
+        tag = str(source["asset_tag"]).upper()
+        for alias in source.get("asset_aliases", []):
+            if str(alias).upper() == tag:
+                continue
+            for word in re.findall(r"[A-Za-z]{4,}", str(alias)):
+                if word.lower() not in GENERIC_WORDS:
+                    words.setdefault(word.lower(), set()).add(tag)
+    return words
+
+
+def question_word_machines(question: str, sources: list[dict]) -> tuple[set[str], dict[str, set[str]]]:
+    """(machines named by a word that belongs to exactly one machine, {word: machines} for words shared by several).
+
+    A question word matches a machine word when it starts with it, so "milling" finds the Vertical Mill.
+    """
+    unique: set[str] = set()
+    shared: dict[str, set[str]] = {}
+    aliases = word_aliases(sources)
+    for token in {token.lower() for token in re.findall(r"[A-Za-z]{4,}", question)}:
+        for word, owners in aliases.items():
+            if token.startswith(word):
+                if len(owners) == 1:
+                    unique |= owners
+                else:
+                    shared[word] = owners
+    return unique, shared

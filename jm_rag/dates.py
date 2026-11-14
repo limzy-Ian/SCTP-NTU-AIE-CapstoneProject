@@ -15,7 +15,7 @@ def parse_explicit_date(question: str) -> date | None:
     patterns = (
         (re.compile(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b", re.I), "ymd"),
         (re.compile(r"\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b", re.I), "numeric_dmy"),
-        (re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({month_names})\s+(20\d{{2}})\b", re.I), "dmy"),
+        (re.compile(rf"(?<![\w-])(\d{{1,2}})(?:st|nd|rd|th)?\s+({month_names})\s+(20\d{{2}})\b", re.I), "dmy"),
         (re.compile(rf"\b({month_names})\s+(\d{{1,2}})(?:st|nd|rd|th)?[,]?\s+(20\d{{2}})\b", re.I), "mdy"),
     )
     for pattern, order in patterns:
@@ -94,7 +94,7 @@ def partial_work_order_date(question: str) -> tuple[int, int, str] | None:
         return None
     patterns = (
         re.compile(r"(?<!\d)(\d{1,2})\s*[/.-]\s*(\d{1,2})(?!\s*[/.-]\s*\d{2,4})(?!\d)"),
-        re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept?|october|oct|november|nov|december|dec)\b(?!\s*,?\s*20\d{2})", re.I),
+        re.compile(r"(?<![\w-])(\d{1,2})(?:st|nd|rd|th)?\s+(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept?|october|oct|november|nov|december|dec)\b(?!\s*,?\s*20\d{2})", re.I),
         re.compile(r"\b(january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sept?|october|oct|november|nov|december|dec)\s+(\d{1,2})(?:st|nd|rd|th)?\b(?!\s*,?\s*20\d{2})", re.I),
     )
     for index, pattern in enumerate(patterns):
@@ -136,7 +136,7 @@ _YEAR_THEN_MONTH_YEAR = re.compile(rf"\b(20\d{{2}})\s*{_RANGE_JOIN}\s*({_MONTH_N
 _EXPLICIT_SHAPES = (
     (re.compile(r"\b(20\d{2})[-/](\d{1,2})[-/](\d{1,2})\b"), "ymd"),
     (re.compile(r"\b(\d{1,2})[-/.](\d{1,2})[-/.](20\d{2})\b"), "dmy_numeric"),
-    (re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_NAMES})\s+(20\d{{2}})\b", re.I), "dmy"),
+    (re.compile(rf"(?<![\w-])(\d{{1,2}})(?:st|nd|rd|th)?\s+({_MONTH_NAMES})\s+(20\d{{2}})\b", re.I), "dmy"),
     (re.compile(rf"\b({_MONTH_NAMES})\s+(\d{{1,2}})(?:st|nd|rd|th)?[,]?\s+(20\d{{2}})\b", re.I), "mdy"),
 )
 

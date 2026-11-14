@@ -9,13 +9,41 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from jm_rag.config import ASSET_PATTERN
+
+SPARES_LIST_QUESTION = re.compile(r"\b(?:spares?|parts?)\s+(?:do|does)\s+(?:we|you)\b|\b(?:hold|holding|keep|kept|carry)\b.{0,20}\bfor\b", re.I)
 from jm_rag.dates import date_clarification, parse_date_window, parse_explicit_date, partial_work_order_date
 from jm_rag.incidents import INCIDENT_TYPES, group_incident_events
 from jm_rag.intents import is_history_table_request, is_work_order_table_request
-from jm_rag.tags import question_tags, sensor_tags
+from jm_rag.tags import DOCUMENT_WORDS, question_tags, question_word_machines, sensor_tags
 
 
-STRICT_SENSOR = re.compile(r"\b(?:sensors?|vibrat\w*|temperatures?|time.series|readings?)\b", re.I)
+STRICT_SENSOR = re.compile(r"\b(?:sensors?|vibrat\w*|temperatures?|time.series|readings?|running off|runs? off|drift\w*)\b", re.I)
+WO_TYPES = (("breakdown", "BREAK"), ("preventive", "PREV"), ("corrective", "CORR"))
+FAMILY = {"document": "doc", "nameplate": "plate", "processed_nameplate": "plate", "processed_ocr_text": "plate",
+          "tabular": "spares", "incident": "incident", "incident_ocr": "incident", "processed_incident": "incident",
+          "work_order": "work_order", "sensor_summary": "sensor", "sensor_trend_monthly": "sensor",
+          "processed_sensor_summary": "sensor", "processed_sensor_gaps": "sensor"}
+
+
+def _work_order_type(question: str) -> str | None:
+    for word, prefix in WO_TYPES:
+        if re.search(rf"\b{word}s?\b", question, re.I):
+            return prefix
+    return None
+
+
+def _interleave(indexes: list[int], candidates: list[dict], wanted: set[str]) -> list[int]:
+    """Round-robin the ranked results across the topics asked about, so one topic cannot fill every slot."""
+    lanes: dict[str, list[int]] = {}
+    for index in indexes:
+        lanes.setdefault(FAMILY.get(candidates[index].get("source_type"), "other"), []).append(index)
+    if len([lane for lane in lanes if lane in wanted]) < 2:
+        return indexes
+    merged, position = [], 0
+    while any(position < len(lane) for lane in lanes.values()):
+        merged += [lane[position] for lane in lanes.values() if position < len(lane)]
+        position += 1
+    return merged
 
 
 def _matches_report(source: dict, key: str) -> bool:
@@ -41,9 +69,14 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
             if source.get("asset_tag"):
                 tags.add(source["asset_tag"].upper())
     work_order_intent = bool(re.search(
-        r"\b(?:work.orders?|service.records?|service.history|servicing|maintenance|repairs?|pm|preventive|corrective|wo\s*\d)\b",
+        r"\b(?:work.orders?|service.records?|service.history|servicing|maintenance|repairs?|pm|preventive|corrective|"
+        r"breakdowns?|wo\s*\d)\b",
         question, re.I,
     ))
+    ambiguous_words: dict[str, set[str]] = {}
+    if not tags and not DOCUMENT_WORDS.search(question):
+        word_tags, ambiguous_words = question_word_machines(question, sources)
+        tags |= word_tags
     incident_intent = bool(re.search(
         r"\b(?:incidents?|near.miss(?:es)?|severity|lost.days|injur(?:y|ies))\b", question, re.I,
     ))
@@ -57,10 +90,14 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
     report_matches = re.findall(r"\bIR[-\s](20\d{2})[-\s](\d{3,6})\b", question, re.I)
     report_keys = {f"IR-{year}-{int(number)}" for year, number in report_matches}
     preferred_types = set()
-    if re.search(r"\b(?:spares?|stock|part number|inventory|lead time|minimum quantity)\b", question, re.I):
+    part_numbers = {str(s.get("title", "")).rsplit(" / ", 1)[-1].upper() for s in sources if s.get("source_type") == "tabular"}
+    if re.search(r"\b(?:spares?|stock|part number|inventory|lead time|minimum quantity)\b", question, re.I) or any(
+            re.search(rf"(?<![\w-]){re.escape(part)}(?![\w-])", question, re.I) for part in part_numbers if part):
         preferred_types.add("tabular")
     # sensor words match by stem, so "vibrating", "vibrates" and "temperatures" count
-    sensor_intent = bool(re.search(r"\b(?:sensors?|vibrat\w*|temperatures?|readings?|trend\w*|time.series|gaps?)\b", question, re.I))
+    sensor_intent = bool(re.search(
+        r"\b(?:sensors?|vibrat\w*|temperatures?|readings?|trend\w*|time.series|gaps?|running off|runs? off|"
+        r"feels? off|drift\w*|abnormal|unusual)\b", question, re.I))
     sensor_trend_intent = bool(sensor_intent and re.search(
         r"\b(?:trend\w*|increas\w*|ris(?:e|es|ing)|decreas\w*|fall\w*|falling|chang\w*|month.over.month|"
         r"more|less|higher|lower|worse|climb\w*|drift\w*)\b",
@@ -86,8 +123,10 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
         is_work_order_table_request(question) or re.search(r"\b(?:recent|latest|last)\b", question, re.I)
     ))
     strict_sensor = bool(STRICT_SENSOR.search(question))
-    lube_intent = bool(re.search(r"\b(?:lubricants?|lubricat\w*|lubes?|oils?|grease|greasing|viscosity|vg\s?\d+)\b",
+    lube_intent = bool(re.search(r"\b(?:lubricants?|lubricat\w*|lubes?|oils?|grease|greasing|viscosity|vg\s?\d+|tonna|iso\s+vg)\b",
                                  question, re.I))
+    if lube_intent or DOCUMENT_WORDS.search(question):
+        recent_work_orders = False   # "I am servicing CNC-02: which procedure, which oil" is not a work-order listing
     if not sensor_intent and (lube_intent or re.search(
             r"\b(?:manufacturer|model|serial|nameplate|capacity|electrical|power|weight)\b", question, re.I)):
         preferred_types.update({"nameplate", "processed_nameplate", "processed_ocr_text"})
@@ -99,8 +138,11 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
             values = [source["asset_tag"]] if source.get("asset_tag") else []
         return {str(value).upper() for value in values if value}
 
+    spares_intent = "tabular" in preferred_types and bool(SPARES_LIST_QUESTION.search(question))
+    # a spares row listed for "ALL" stays in a machine's spares answer, as an unresolved entry (it is never expanded)
     candidates = [source for source in sources
-                  if not tags or not source_tags(source) or source_tags(source) & tags]
+                  if not tags or not source_tags(source) or source_tags(source) & tags
+                  or (spares_intent and source.get("source_type") == "tabular" and source_tags(source) == {"ALL"})]
     if unknown_tags and not tags:
         candidates = []  # a machine tag that matches no machine: abstain instead of returning other machines (fix 2)
     # a sensor question about a machine with no sensor data abstains (fix 5)
@@ -131,6 +173,11 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
                 filtered.append(source)
         candidates = filtered
 
+    wanted_type = _work_order_type(question) if work_order_intent else None
+    if wanted_type:   # "breakdowns" narrows the work orders to that type
+        candidates = [source for source in candidates if source.get("source_type") != "work_order"
+                      or str((source.get("record") or {}).get("wo_type", "")).upper().startswith(wanted_type)]
+
     if report_keys:
         report_years = {key.rsplit("-", 1)[-1]: key.split("-")[1] for key in report_keys}
         exact_incidents = [source for source in candidates
@@ -145,7 +192,7 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
                 combined_history_intent=combined_history_intent, capability_intent=capability_intent,
                 sensor_intent=sensor_intent, sensor_trend_intent=sensor_trend_intent, preferred_types=preferred_types,
                 recent_work_orders=recent_work_orders, date_window=date_window, report_keys=report_keys,
-                lube_intent=lube_intent, unknown_tags=sorted(unknown_tags), sensorless_tags=sensorless_tags,
+                lube_intent=lube_intent, ambiguous_words=ambiguous_words, unknown_tags=sorted(unknown_tags), sensorless_tags=sensorless_tags,
                 sensor_tags=sorted(with_data), missing_reports=sorted(report_keys - found_reports),
                 other_intent=other_intent)
 
@@ -170,6 +217,8 @@ def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
             search_question += " sensor vibration temperature readings"
         if plan.lube_intent:
             search_question += " lubricant grease oil"
+        if "tabular" in preferred_types:
+            search_question += " spare part inventory stock quantity"
         if sensor_trend_intent:
             search_question += " monthly mean vibration RMS normalized temperature trend increase rise decrease change month-over-month"
         if incident_intent:
@@ -191,7 +240,7 @@ def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
         preferred = [index for index in order if candidates[index].get("source_type") in preferred_types]
         relevant = [index for index in preferred if scores[index] > 0]
         if relevant:
-            selected = relevant
+            selected = _interleave(relevant, candidates, {FAMILY[t] for t in preferred_types if t in FAMILY})
         elif tags and not search_question.strip():
             selected = preferred or selected
     if combined_history_intent:
@@ -237,4 +286,6 @@ def matching_records(question: str, sources: list[dict]) -> dict:
         found["sensor"] = by_type("sensor_trend_monthly")
     if "tabular" in plan.preferred_types:
         found["spares"] = by_type("tabular")
+    if plan.lube_intent and not plan.sensor_intent:
+        found["lubricant"] = by_type("nameplate", "processed_ocr_text")
     return found if len(found) > 2 else {}

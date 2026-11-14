@@ -15,7 +15,9 @@ import time
 from jm_rag import conflicts as conflict_rules
 from jm_rag import observability, validator
 from jm_rag.dates import date_clarification, partial_work_order_date, resolve_partial_work_order_date
+from jm_rag import gaps
 from jm_rag.facts import facts_source
+from jm_rag.followup import resolve_followup
 from jm_rag.guardrails import input_guard, names, output_guard
 from jm_rag.guardrails.sanitize import sanitize_sources, sanitize_text
 from jm_rag.intents import is_aggregate_question, is_history_table_request, is_work_order_table_request
@@ -24,7 +26,9 @@ from jm_rag.outcome import decide_outcome
 from jm_rag.prompt import load_system_prompt, serialize_evidence
 from jm_rag.retrieval import plan_query, retrieve
 from jm_rag.tables import format_combined_history_table, format_incident_table, format_work_order_table
-from jm_rag.tags import machine_tags
+from jm_rag.tags import DOCUMENT_WORDS, machine_tags
+
+LUBE_WORDS = re.compile(r"\b(?:oils?|lubricants?|lubes?|lubrication|grease)\b", re.I)
 from jm_rag.template import build_template_answer
 
 NOT_CONFIGURED_NOTE = "The AI endpoint is not configured, so this lists the retrieved evidence directly."
@@ -64,6 +68,17 @@ def ambiguous_machines(question: str, sources: list[dict]) -> tuple[str, list[st
     for alias, owners in sorted(aliases.items()):
         if len(owners) > 1 and re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", question, re.I):
             return alias, sorted(owners)
+    return None
+
+
+def ambiguous_word(question: str, sources: list[dict]) -> tuple[str, list[str]] | None:
+    """("lathe", tags) for "the lathe" when that word names several machines and nothing else picks one."""
+    plan = plan_query(question, sources) if sources else None
+    if plan is None or plan.tags:
+        return None
+    for word, owners in sorted(plan.ambiguous_words.items()):
+        if re.search(rf"\bthe\s+{re.escape(word)}\b(?!s)", question, re.I):
+            return word, sorted(owners)
     return None
 
 
@@ -121,6 +136,25 @@ def _model_answer(question, history, sources, warnings, client, model, usage, tr
         return draft, None
     errors.append("model answer failed validation twice; template used")
     return build_template_answer(sources, question), UNVERIFIED_DRAFT_NOTE
+
+
+def _gap_notes(question: str, sources: list[dict], all_sources: list[dict]) -> tuple[list[str], bool]:
+    """Notes for what the data cannot give (unread or implausible plate fields, an SOP topic with no SOP, identity)."""
+    plan = plan_query(question, all_sources) if all_sources else None
+    tags = set(plan.tags) if plan else set()
+    loads = set(conflict_rules._sop_rated_loads(sources))
+    notes, abstain = gaps.plate_field_gaps(question, sources, tags, loads, all_sources)
+    topic = gaps.sop_topic_gap(question, all_sources) or gaps.shift_gap(question, sources)
+    if topic:
+        notes.append(topic)
+        abstain = True
+    identity = gaps.identity_gap(question, all_sources)
+    if identity:
+        notes.append(identity[0])
+        if identity[1] is not None and all(s.get("source_type") != "employee_data_quality" for s in sources):
+            sources.append({**identity[1], "id": f"S{len(sources) + 1}"})
+        abstain = True
+    return notes, abstain
 
 
 def _not_found_statements(question: str, all_sources: list[dict]) -> list[str]:
@@ -198,7 +232,7 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
     unclear_date = date_clarification(question)
     if unclear_date:
         return _finish(started, usage, trace, errors, answer=unclear_date, outcome="clarify", flags=flags)
-    ambiguous = ambiguous_machines(question, all_sources)
+    ambiguous = ambiguous_machines(question, all_sources) or ambiguous_word(question, all_sources)
     if ambiguous:
         alias, tags = ambiguous
         text = (f"`{alias}` matches more than one machine ({', '.join(tags)}). Which one do you mean? "
@@ -210,13 +244,17 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
     if re.fullmatch(r"20\d{2}", question.strip()):
         if partial_work_order_date(previous):
             retrieval_question = resolve_partial_work_order_date(previous, int(question.strip()))
+    elif resolve_followup(question, previous):
+        retrieval_question = resolve_followup(question, previous)
     elif not any(character.isdigit() for character in question):
         retrieval_question = (previous + " " + question).strip()
-    aggregate = is_aggregate_question(question)
-    table_request = is_history_table_request(retrieval_question) and not aggregate
+    aggregate = is_aggregate_question(retrieval_question)
+    # "I am servicing CNC-02, which procedure applies and what oil" is not a request for a service-history table
+    other_topic = bool(DOCUMENT_WORDS.search(question) or LUBE_WORDS.search(question))
+    table_request = is_history_table_request(retrieval_question) and not aggregate and not other_topic
     combined = bool(re.search(r"\b(?:incidents?|near.miss(?:es)?)\b", retrieval_question, re.I)
                     and re.search(r"\b(?:service|servicing|work.order|maintenance)\b", retrieval_question, re.I)
-                    and not aggregate)
+                    and not aggregate and not other_topic)
     sources = sanitize_sources(retrieve(retrieval_question, all_sources,
                                         limit=50 if combined else 10 if table_request else 5))
     trace.append({"step": "retrieve", "sources": len(sources), "table_request": table_request})
@@ -255,7 +293,8 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
     trace.append({"step": "path", "path": path})
 
     found = conflict_rules.find_conflicts(sources, question, all_sources)
-    notes = mandatory_notes(flags, question, sources)
+    notes, gap = _gap_notes(retrieval_question, sources, all_sources)
+    notes = mandatory_notes(flags, question, sources) + notes
     notes += [item["text"] for item in found]
     if note:
         notes.append(note)
@@ -263,7 +302,7 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         notes += not_found  # something asked about was not found, though other evidence was
     if failed and sources:
         notes.append(f"I could not check {', '.join(failed)}; this answer uses only the sources that were available.")
-    outcome = decide_outcome(flags=flags, has_evidence=bool(sources), failed_sources=failed, conflicts=found)
+    outcome = decide_outcome(flags=flags, has_evidence=bool(sources), failed_sources=failed, conflicts=found, gap=gap)
     trace.append({"step": "outcome", "outcome": outcome, "conflicts": len(found)})
     text = body + ("\n\nNotes:\n" + "\n".join(f"- {item}" for item in notes) if notes else "")
     return _finish(started, usage, trace, errors, answer=text, outcome=outcome, flags=flags, sources=sources,

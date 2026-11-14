@@ -133,7 +133,8 @@ class SparesAllConflictTests(unittest.TestCase):
         self.assertIn("It matches this nameplate", text)
         self.assertIn("nameplates of CNC-03 read a different viscosity grade", text)
         self.assertIn("not expanded to machines", text)
-        self.assertEqual({source["source_type"] for source in result["sources"]}, {"nameplate", "tabular"})
+        # Phase 5 added a lubricant facts source beside the nameplate and the spares row.
+        self.assertEqual({source["source_type"] for source in result["sources"]}, {"nameplate", "tabular", "computed_facts"})
 
     def test_a_machine_whose_plate_differs_from_all_gets_the_direct_conflict(self):
         result = self.ask("What oil does CNC-03 take?")

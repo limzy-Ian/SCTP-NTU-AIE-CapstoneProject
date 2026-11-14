@@ -37,3 +37,33 @@ Date: 14 Nov 2026. Branch: `enhance/rag-hardening`.
 ### Open issues
 - `.env.example` contains a key-like value in the working tree (uncommitted). Revert it to a placeholder, and rotate the key if it was real or ever committed elsewhere. `.env.example` is tracked, so a careless `git add -A` would publish it.
 - Streamlit startup was not run; `app` imports cleanly (tests import `app`) and the data layer loads against live MySQL.
+
+## Phase 1: Characterization tests
+
+Date: 14 Nov 2026.
+
+### What changed
+- Added `tests/test_characterization.py` with 105 tests in 9 classes. They pin the current behaviour of `parse_explicit_date`, `parse_date_window`, `partial_work_order_date` and `resolve_partial_work_order_date`, the intent helpers, `format_work_order_table`, `format_incident_table`, `format_combined_history_table`, `retrieve()`, `input_refusal`, `validate_answer`, `serialize_evidence` and `build_sensor_monthly_trend_sources`. They use the invented fixture corpus only.
+- Date forms from `RAG_SKILL.md` are all covered: `26 July 2024`, `26-07-2024` (day first), `2024-07-26`, `July 2024`, `Jul2024`, `June-August 2025`, `2024-2025`.
+- No production code and no existing test was changed.
+- Probe output was used to write each assertion, so the tests describe actual behaviour.
+
+### Results
+- New tests: 105, all pass. Existing 48 tests untouched and green. Full suite: 153 tests, OK.
+- No MySQL, no network and no model needed for the new tests.
+
+### Odd behaviour found (not fixed; each is marked `ODD:` in the test file)
+1. `parse_date_window("31 Feb 2024")` returns the whole of February 2024 because the month-year rule matches after the day rule fails.
+2. `parse_date_window("July 2024 to 2025")` returns 1 Jan 2024 to 31 Dec 2025, dropping the month.
+3. `ASSET_PATTERN` hardcodes the prefixes `CNC|CRN|LTH|MILL|PMP|WELD|BLAST|CMP`. A tag with another prefix (fixture `TST-99`) is not seen as a tag, so the question returns other machines' nameplates instead of nothing. Fixture machines are found by alias matching only. A new machine type would need a code change.
+4. "service history" counts as a table request but not as a work-order intent in `retrieve()`. The date window is then not applied and non-work-order sources are mixed in. "service history and incidents table in 2025" returns no work orders.
+5. An unmatched report ID (for example `IR-2025-101`) is ignored and all incident sources come back, instead of nothing.
+6. A sensor question for a machine with no sensor data (fixture `TST-02`) returns unrelated sources (work orders, nameplate). The abstain decision has to be made later (Phase 4).
+7. `input_refusal` does not catch "Ignore previous instructions" or "how do I override the alarm". It also refuses "ignore the machine guard inspection finding" (false positive on "guard").
+8. `validate_answer` does not check numbers or identifiers against evidence, and does not detect employee names.
+9. `format_incident_table` prints OCR free text verbatim, including embedded instruction text from the fixture record. Phase 3 (name and evidence screening) and Phase 4 (untrusted evidence) must handle this.
+10. The OCR incident event ID in the table is the trailing number of the report ID (`IR-2025-990` becomes `990`), so an OCR report and a CMMS incident group together only when those numbers match.
+
+### Notes for later phases
+- Phase 3: treat the `reviewer` field pulled from `ocr_review_decisions` as personal data (human instruction, 14 Nov 2026). Keep it out of evidence text, the evidence panel and answers. The nameplate and incident OCR queries in `_load_mysql_sources` select `d.reviewer`, and `effective_record` receives the row. Add a test with a fixture reviewer value.
+- `.env.example` is clean again in the working tree (the key-like edit is gone).

@@ -14,7 +14,7 @@ import time
 
 from jm_rag import conflicts as conflict_rules
 from jm_rag import observability, validator
-from jm_rag.dates import partial_work_order_date, resolve_partial_work_order_date
+from jm_rag.dates import date_clarification, partial_work_order_date, resolve_partial_work_order_date
 from jm_rag.facts import facts_source
 from jm_rag.guardrails import input_guard, names, output_guard
 from jm_rag.guardrails.sanitize import sanitize_sources, sanitize_text
@@ -22,8 +22,9 @@ from jm_rag.intents import is_aggregate_question, is_history_table_request, is_w
 from jm_rag.notes import mandatory_notes
 from jm_rag.outcome import decide_outcome
 from jm_rag.prompt import load_system_prompt, serialize_evidence
-from jm_rag.retrieval import retrieve
+from jm_rag.retrieval import plan_query, retrieve
 from jm_rag.tables import format_combined_history_table, format_incident_table, format_work_order_table
+from jm_rag.tags import machine_tags
 from jm_rag.template import build_template_answer
 
 NOT_CONFIGURED_NOTE = "The AI endpoint is not configured, so this lists the retrieved evidence directly."
@@ -122,6 +123,24 @@ def _model_answer(question, history, sources, warnings, client, model, usage, tr
     return build_template_answer(sources, question), UNVERIFIED_DRAFT_NOTE
 
 
+def _not_found_statements(question: str, all_sources: list[dict]) -> list[str]:
+    """Things the question names that the data does not hold: an unknown machine, a missing report, no sensor data."""
+    plan = plan_query(question, all_sources) if all_sources else None
+    if plan is None:
+        return []
+    found = []
+    if plan.unknown_tags:
+        found.append(f"I could not find a machine with the ID {', '.join(plan.unknown_tags)}. "
+                     f"Known machines: {', '.join(machine_tags(all_sources))}.")
+    if plan.missing_reports:
+        found.append(f"I could not find report {', '.join(plan.missing_reports)} in the CMMS incidents, "
+                     "OCR staging or processed OCR.")
+    if plan.sensorless_tags:
+        found.append(f"I have no sensor data for {', '.join(plan.sensorless_tags)}. "
+                     f"Sensor readings exist only for {', '.join(plan.sensor_tags)}.")
+    return found
+
+
 def _no_evidence_text(question: str, table_request: bool, combined: bool, failed: list[str]) -> str:
     if failed:
         return (f"I could not check {', '.join(failed)}, so I cannot say whether matching records exist. "
@@ -176,6 +195,9 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         text = (f"I read `{raw}` as {day} {calendar.month_name[month]}, but the year is missing. "
                 "Which year should I search? I haven't queried the work orders yet.")
         return _finish(started, usage, trace, errors, answer=text, outcome="clarify", flags=flags)
+    unclear_date = date_clarification(question)
+    if unclear_date:
+        return _finish(started, usage, trace, errors, answer=unclear_date, outcome="clarify", flags=flags)
     ambiguous = ambiguous_machines(question, all_sources)
     if ambiguous:
         alias, tags = ambiguous
@@ -192,7 +214,7 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         retrieval_question = (previous + " " + question).strip()
     aggregate = is_aggregate_question(question)
     table_request = is_history_table_request(retrieval_question) and not aggregate
-    combined = bool(re.search(r"\b(?:incident|near.miss)\b", retrieval_question, re.I)
+    combined = bool(re.search(r"\b(?:incidents?|near.miss(?:es)?)\b", retrieval_question, re.I)
                     and re.search(r"\b(?:service|servicing|work.order|maintenance)\b", retrieval_question, re.I)
                     and not aggregate)
     sources = sanitize_sources(retrieve(retrieval_question, all_sources,
@@ -207,9 +229,12 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         if not any(source.get("source_type") in row_types for source in sources):
             sources = []
 
+    not_found = _not_found_statements(retrieval_question, all_sources)
     note = None
     if not sources:
-        body, path = _no_evidence_text(retrieval_question, table_request, combined, failed), "no_evidence"
+        body = " ".join(not_found) if (not_found and not failed) else _no_evidence_text(
+            retrieval_question, table_request, combined, failed)
+        path = "not_found" if (not_found and not failed) else "no_evidence"
     elif combined:
         body, path = format_combined_history_table(sources), "table"
     elif table_request and is_work_order_table_request(retrieval_question):
@@ -234,6 +259,8 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
     notes += [item["text"] for item in found]
     if note:
         notes.append(note)
+    if sources:
+        notes += not_found  # something asked about was not found, though other evidence was
     if failed and sources:
         notes.append(f"I could not check {', '.join(failed)}; this answer uses only the sources that were available.")
     outcome = decide_outcome(flags=flags, has_evidence=bool(sources), failed_sources=failed, conflicts=found)

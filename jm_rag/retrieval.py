@@ -9,8 +9,21 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 from jm_rag.config import ASSET_PATTERN
-from jm_rag.dates import parse_date_window, parse_explicit_date, partial_work_order_date
+from jm_rag.dates import date_clarification, parse_date_window, parse_explicit_date, partial_work_order_date
+from jm_rag.incidents import INCIDENT_TYPES, group_incident_events
 from jm_rag.intents import is_history_table_request, is_work_order_table_request
+from jm_rag.tags import question_tags, sensor_tags
+
+
+STRICT_SENSOR = re.compile(r"\b(?:sensors?|vibrat\w*|temperatures?|time.series|readings?)\b", re.I)
+
+
+def _matches_report(source: dict, key: str) -> bool:
+    """Is this source the report ``key`` (IR-YYYY-N)? A CMMS incident matches by its ID and the year of its date."""
+    if source.get("record_key") == key:
+        return True
+    when = source.get("incident_date")
+    return (source.get("source_type") == "incident" and f"IR-{getattr(when, 'year', '')}-{source.get('incident_id')}" == key)
 
 
 class Plan(SimpleNamespace):
@@ -19,7 +32,7 @@ class Plan(SimpleNamespace):
 
 def plan_query(question: str, sources: list[dict]) -> Plan | None:
     """Intents plus the filtered candidate sources, before any ranking. None when retrieval must return nothing."""
-    tags = {match.upper() for match in ASSET_PATTERN.findall(question)}
+    tags, unknown_tags = question_tags(question, sources)
     for source in sources:
         if not source.get("machine_record"):
             continue
@@ -28,7 +41,7 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
             if source.get("asset_tag"):
                 tags.add(source["asset_tag"].upper())
     work_order_intent = bool(re.search(
-        r"\b(?:work.orders?|service.records?|servicing|maintenance|repairs?|pm|preventive|corrective|wo\s*\d)\b",
+        r"\b(?:work.orders?|service.records?|service.history|servicing|maintenance|repairs?|pm|preventive|corrective|wo\s*\d)\b",
         question, re.I,
     ))
     incident_intent = bool(re.search(
@@ -64,12 +77,15 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
         preferred_types.update({"incident", "incident_ocr", "processed_incident"})
     if work_order_intent and partial_work_order_date(question):
         return None
+    if (work_order_intent or incident_intent) and date_clarification(question):
+        return None  # an unreadable date must be asked about, not guessed (Phase 4b fix 1)
     exact_work_order_date = parse_explicit_date(question) if work_order_intent else None
     if work_order_intent:
         preferred_types.add("work_order")
     recent_work_orders = bool(work_order_intent and (
         is_work_order_table_request(question) or re.search(r"\b(?:recent|latest|last)\b", question, re.I)
     ))
+    strict_sensor = bool(STRICT_SENSOR.search(question))
     lube_intent = bool(re.search(r"\b(?:lubricants?|lubricat\w*|lubes?|oils?|grease|greasing|viscosity|vg\s?\d+)\b",
                                  question, re.I))
     if not sensor_intent and (lube_intent or re.search(
@@ -85,6 +101,14 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
 
     candidates = [source for source in sources
                   if not tags or not source_tags(source) or source_tags(source) & tags]
+    if unknown_tags and not tags:
+        candidates = []  # a machine tag that matches no machine: abstain instead of returning other machines (fix 2)
+    # a sensor question about a machine with no sensor data abstains (fix 5)
+    with_data = sensor_tags(sources)
+    sensorless_tags = sorted(tags - with_data) if (strict_sensor and with_data and tags) else []
+    other_intent = work_order_intent or incident_intent or lube_intent
+    if sensorless_tags and not (tags & with_data) and not other_intent:
+        candidates = []
     if capability_intent:
         candidates = [source for source in candidates if source.get("source_type") == "app_capability"]
 
@@ -115,13 +139,15 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
                                and str(source.get("incident_id", "")) in report_years
                                and str(getattr(source.get("incident_date"), "year", ""))
                                == report_years[str(source.get("incident_id"))])]
-        if exact_incidents:
-            candidates = exact_incidents
+        candidates = exact_incidents  # no match at all means abstain, not "all incidents" (fix 4)
+    found_reports = {key for key in report_keys if any(_matches_report(source, key) for source in candidates)}
     return Plan(tags=tags, candidates=candidates, work_order_intent=work_order_intent, incident_intent=incident_intent,
                 combined_history_intent=combined_history_intent, capability_intent=capability_intent,
                 sensor_intent=sensor_intent, sensor_trend_intent=sensor_trend_intent, preferred_types=preferred_types,
                 recent_work_orders=recent_work_orders, date_window=date_window, report_keys=report_keys,
-                lube_intent=lube_intent)
+                lube_intent=lube_intent, unknown_tags=sorted(unknown_tags), sensorless_tags=sensorless_tags,
+                sensor_tags=sorted(with_data), missing_reports=sorted(report_keys - found_reports),
+                other_intent=other_intent)
 
 
 def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
@@ -172,20 +198,17 @@ def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
         order_indices = [index for index in order
                          if candidates[index].get("source_type") == "work_order" and scores[index] > 0]
         order_indices.sort(key=lambda index: str(candidates[index].get("record_date") or ""), reverse=True)
-        incident_groups: dict[str, list[int]] = {}
-        for index in order:
-            source = candidates[index]
-            if source.get("source_type") not in {"incident", "incident_ocr", "processed_incident"} or scores[index] <= 0:
-                continue
-            event_key = source.get("record_key") or source.get("incident_id")
-            event_id = str(event_key).rsplit("-", 1)[-1] if event_key else source["title"]
-            incident_groups.setdefault(event_id, []).append(index)
+        scored_incidents = [index for index in order
+                            if candidates[index].get("source_type") in INCIDENT_TYPES and scores[index] > 0]
+        position = {id(candidates[index]): index for index in scored_incidents}
+        event_groups = [[position[id(source)] for source in versions]
+                        for versions in group_incident_events([candidates[index] for index in scored_incidents])]
         recent_incidents = sorted(
-            incident_groups.items(),
-            key=lambda item: max(str(candidates[index].get("incident_date") or "") for index in item[1]),
+            event_groups,
+            key=lambda group: max(str(candidates[index].get("incident_date") or "") for index in group),
             reverse=True,
         )[:10]
-        incident_indices = [index for _, group in recent_incidents for index in group]
+        incident_indices = [index for group in recent_incidents for index in group]
         selected = incident_indices + order_indices[:10]
     elif recent_work_orders and not incident_intent:
         work_orders = [index for index in selected if candidates[index].get("source_type") == "work_order"]

@@ -332,8 +332,8 @@ class ConflictScopeTests(unittest.TestCase):
         self.assertGreaterEqual(len(conflicts.find_conflicts(self.sources)), 2)
 
     def test_incident_versions_only_matter_for_incident_questions(self):
-        cmms = src(source_type="incident", incident_id="917", record={"severity_raw": 2})
-        ocr = src(source_type="incident_ocr", record_key="IR-2024-917", record={"severity_raw": 4})
+        cmms = src(source_type="incident", incident_id="917", incident_date=date(2024, 5, 1), record={"severity_raw": 2})
+        ocr = src(source_type="incident_ocr", record_key="IR-2024-917", incident_date="2024-05-01", record={"severity_raw": 4})
         both = numbered([cmms, ocr])
         self.assertEqual(len(conflicts.find_conflicts(both, "what oil does CNC-02 take")), 0)
         self.assertEqual(len(conflicts.find_conflicts(both, "show incident 917")), 1)

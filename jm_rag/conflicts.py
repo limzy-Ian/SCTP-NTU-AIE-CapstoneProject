@@ -11,11 +11,11 @@ from __future__ import annotations
 import re
 from difflib import SequenceMatcher
 
+from jm_rag.incidents import event_label, group_incident_events
 from jm_rag.intents import is_incident_query
 from jm_rag.notes import record_of
 
 _PLATE_TYPES = {"nameplate", "processed_nameplate"}
-_INCIDENT_TYPES = {"incident", "incident_ocr", "processed_incident"}
 
 
 def _alnum(value) -> str:
@@ -240,20 +240,10 @@ def _sop_crane_vs_plate(sources: list[dict]) -> list[dict]:
     return found
 
 
-def _event_id(source: dict) -> str | None:
-    key = source.get("record_key") or source.get("incident_id")
-    return str(key).rsplit("-", 1)[-1] if key else None
-
-
 def _incident_versions(sources: list[dict]) -> list[dict]:
-    groups: dict[str, list[dict]] = {}
-    for source in sources:
-        if source.get("source_type") in _INCIDENT_TYPES:
-            event = _event_id(source)
-            if event:
-                groups.setdefault(event, []).append(source)
+    groups = [(event_label(versions), versions) for versions in group_incident_events(sources)]
     found = []
-    for event, versions in sorted(groups.items()):
+    for event, versions in sorted(groups, key=lambda item: item[0]):
         if len({version["source_type"] for version in versions}) < 2:
             continue
         differences = []

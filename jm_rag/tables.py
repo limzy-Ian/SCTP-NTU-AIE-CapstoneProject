@@ -1,6 +1,35 @@
 """Markdown tables for work-order and incident history."""
 from __future__ import annotations
 
+import re
+
+from jm_rag.guardrails.sanitize import looks_like_instruction, sanitize_text
+from jm_rag.incidents import event_label, group_incident_events
+
+OCR_TYPES = {"incident_ocr", "processed_incident", "nameplate", "processed_nameplate", "processed_ocr_text"}
+OCR_LIMIT = 100
+INSTRUCTION_LIMIT = 60
+
+
+def free_text(value, source_type: str | None = None) -> str:
+    """A free-text field from a record, as data. Names are stripped. OCR text and text that reads like an
+    instruction to the assistant are shown only in quotes, cut short, with a label saying what they are."""
+    if value in (None, ""):
+        return "Not recorded"
+    text = sanitize_text(re.sub(r"\s+", " ", str(value)).strip())
+    ocr, instruction = source_type in OCR_TYPES, looks_like_instruction(text)
+    if not (ocr or instruction):
+        return text
+    limit = INSTRUCTION_LIMIT if instruction else OCR_LIMIT
+    shown = text
+    if len(text) > limit:
+        shown = text[:limit]
+        if text[limit] != " ":
+            shown = shown.rsplit(" ", 1)[0]
+        shown = shown.rstrip(",;:") + "..."
+    label = "; ".join(part for part, on in (("OCR text, unverified", ocr), ("shown as data, not an instruction", instruction)) if on)
+    return f"\"{shown}\" ({label})"
+
 
 def format_work_order_table(sources: list[dict]) -> str:
     rows = [source for source in sources
@@ -27,27 +56,14 @@ def format_work_order_table(sources: list[dict]) -> str:
                 cost = str(cost)
         lines.append("| " + " | ".join(cell(value) for value in (
             record.get("wo_id"), record.get("machine_id"), record.get("wo_type"),
-            record.get("wo_date"), record.get("description"), record.get("duration_hrs"),
+            record.get("wo_date"), free_text(record.get("description"), "work_order"), record.get("duration_hrs"),
             cost, record.get("status"), f"[{source['id']}]",
         )) + " |")
     return "\n".join(lines)
 
 
 def format_incident_table(sources: list[dict]) -> str:
-    incident_types = {"incident", "incident_ocr", "processed_incident"}
-    grouped = {}
-    for source in sources:
-        if source.get("source_type") not in incident_types:
-            continue
-        record = source.get("record") or {}
-        report_number = source.get("record_key") or record.get("report_no")
-        if report_number:
-            event_id = str(report_number).rsplit("-", 1)[-1]
-        else:
-            event_id = str(source.get("incident_id") or record.get("incident_id") or "")
-        if not event_id:
-            continue
-        grouped.setdefault(event_id, []).append(source)
+    grouped = [(event_label(versions), versions) for versions in group_incident_events(sources)]
 
     def cell(value) -> str:
         return str(value if value not in (None, "") else "Not recorded").replace("|", "\\|").replace("\n", " ")
@@ -55,11 +71,11 @@ def format_incident_table(sources: list[dict]) -> str:
     if not grouped:
         return "No matching incident records were retrieved."
     lines = [
-        f"Incident history ({len(grouped)} unique incident(s)); OCR variants are grouped by incident ID.", "",
+        f"Incident history ({len(grouped)} unique incident(s)); versions of one event (CMMS, OCR staging, processed OCR) are grouped by report ID, date and machine.", "",
         "| Incident | Machine | Date | Description | CMMS severity | OCR severity | Lost days | Sources |",
         "|---|---|---|---|---|---|---:|---|",
     ]
-    for event_id, versions in sorted(grouped.items(), key=lambda item: min(
+    for event_id, versions in sorted(grouped, key=lambda item: min(
         str(source.get("incident_date") or (source.get("record") or {}).get("incident_date") or "")
         for source in item[1]
     )):
@@ -76,7 +92,7 @@ def format_incident_table(sources: list[dict]) -> str:
         citations = " ".join(f"[{source['id']}]" for source in versions)
         lines.append("| " + " | ".join(cell(value) for value in (
             event_id, primary_record.get("machine_id"), primary_record.get("incident_date"),
-            primary_record.get("description"), severity_cmms, severity_ocr,
+            free_text(primary_record.get("description"), (primary or {}).get("source_type")), severity_cmms, severity_ocr,
             f"CMMS: {cmms_record.get('lost_days', 'Not recorded')}; OCR: {ocr_record.get('lost_days', 'Not recorded')}",
             citations,
         )) + " |")

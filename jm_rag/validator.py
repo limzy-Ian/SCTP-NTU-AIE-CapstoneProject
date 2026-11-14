@@ -108,6 +108,28 @@ def post_check(answer: str, sources: list[dict], question: str = "") -> list[str
     return errors
 
 
+# Condition judgements the data cannot support. For a question flagged as an inference request the answer must not use
+# any of these, not even negated ("cannot be concluded that it is in good shape"): the reader takes away the phrase.
+CONDITION_JUDGEMENTS = (
+    "in good shape", "in bad shape", "in poor shape", "good shape", "bad shape",
+    "good condition", "poor condition", "bad condition", "fine condition",
+    "healthy", "unhealthy", "in good health", "good health",
+    "safe to run", "safe to use", "safe to operate", "unsafe to run", "unsafe to use", "unsafe to operate",
+    "no problems", "no issues", "working fine", "running fine", "nothing wrong",
+)
+_CONDITION = re.compile(r"(?<![a-z])(?:" + "|".join(re.escape(p) for p in CONDITION_JUDGEMENTS) + r")(?![a-z])", re.I)
+
+
+def condition_judgements(answer: str) -> list[str]:
+    """The condition-judgement phrases used in the answer, lower case, in order of first use."""
+    found: list[str] = []
+    for match in _CONDITION.finditer(answer or ""):
+        phrase = match.group(0).lower()
+        if phrase not in found:
+            found.append(phrase)
+    return found
+
+
 def validate_answer(answer: str, sources: list[dict]) -> str:
     cited = set(re.findall(r"\[(S\d+)\]", answer))
     allowed = {source["id"] for source in sources}

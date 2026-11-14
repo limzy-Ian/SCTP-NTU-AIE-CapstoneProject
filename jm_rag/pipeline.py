@@ -236,7 +236,7 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         trace.append({"step": "facts", "computed": bool(computed)})
         body, note = model_answer(question, retrieval_question, history, sources, sanitize_text(str(warnings)), client,
                                   model,
-                                   usage, trace, errors, max_tokens)
+                                   usage, trace, errors, max_tokens, flags=flags)
         path = "template" if note else "model"
     trace.append({"step": "path", "path": path})
 

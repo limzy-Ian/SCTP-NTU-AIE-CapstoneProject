@@ -11,7 +11,8 @@ from __future__ import annotations
 import re
 from datetime import date
 
-DATA_END_OPTIONS = ["30 Jun 2026", "30 June 2026", "2026-06-30", "June 30, 2026"]
+# Dates in answers are written as "30 Jun 2026" (prompt rule); the data-end caveat accepts only that form.
+DATA_END_OPTIONS = ["30 Jun 2026"]
 _MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
 
 
@@ -156,7 +157,7 @@ def required_from_facts(question: str, facts: dict | None) -> list[dict]:
     if Q_RISE.search(q) and (m := grab(r"the rise starts in (\w{3} \d{4})")):
         found.append(_item("month the vibration rise starts", _month_options(m.group(1)), sid))
     if Q_FAHRENHEIT.search(q) and grab(r"stored in Celsius"):
-        found.append(_item("the readings are stored in Celsius", ["Celsius", "°C"], sid, caveat=True))
+        found.append(_item("the readings are stored in Celsius", ["Celsius"], sid, caveat=True))
         if m := grab(r"converted by code to Fahrenheit: (.+?)\.(?:\s|$)"):
             found += [_item(f"{label} (F)", [value], sid) for label, value in
                       re.findall(r"((?:mean|maximum) temperature (?:lowest|highest)) ([\d.]+) F", m.group(1))]

@@ -39,10 +39,16 @@ def call_model(client, model, messages, step, usage, trace, max_tokens):
     return response.choices[0].message.content or ""
 
 
-def problems_with(draft: str, sources: list[dict], question: str) -> list[str]:
+def problems_with(draft: str, sources: list[dict], question: str, flags: dict | None = None) -> list[str]:
     found = validator.post_check(draft, sources, question)
     if validator.unsafe_language(draft):
         found.append("The answer asks for or describes a safety bypass or private data. Remove it.")
+    if (flags or {}).get("inference_request"):
+        phrases = validator.condition_judgements(draft)
+        if phrases:
+            found.append("The question asks for a judgement the data cannot support. Do not use these phrases, not even in "
+                         "a negated sentence: " + ", ".join(f'"{p}"' for p in phrases)
+                         + ". Describe what the records show and say the data cannot judge the machine's condition.")
     return [sanitize_text(item) for item in found]
 
 
@@ -56,7 +62,8 @@ def _missing_text(items: list[dict]) -> list[str]:
             for item in items]
 
 
-def model_answer(question, retrieval_question, history, sources, warnings, client, model, usage, trace, errors, max_tokens):
+def model_answer(question, retrieval_question, history, sources, warnings, client, model, usage, trace, errors, max_tokens,
+                 flags=None):
     """Return (answer, note). A note is set when the template was used instead of the model."""
     required = required_values(retrieval_question, sources)
     if client is None:
@@ -70,7 +77,7 @@ def model_answer(question, retrieval_question, history, sources, warnings, clien
     except Exception as error:  # noqa: BLE001
         errors.append(f"model unavailable ({type(error).__name__})")
         return build_template_answer(sources, question, required), ENDPOINT_DOWN_NOTE
-    problems = problems_with(draft, sources, question)
+    problems = problems_with(draft, sources, question, flags)
     lacking = missing(draft, required)
     trace.append({"step": "post_check", "attempt": 1, "problems": len(problems), "missing_required": len(lacking)})
     if not problems and not lacking:
@@ -91,7 +98,7 @@ def model_answer(question, retrieval_question, history, sources, warnings, clien
     except Exception as error:  # noqa: BLE001
         errors.append(f"model unavailable on retry ({type(error).__name__})")
         return build_template_answer(sources, question, required), ENDPOINT_DOWN_NOTE
-    problems = problems_with(draft, sources, question)
+    problems = problems_with(draft, sources, question, flags)
     lacking = missing(draft, required)
     trace.append({"step": "post_check", "attempt": 2, "problems": len(problems), "missing_required": len(lacking)})
     if problems:

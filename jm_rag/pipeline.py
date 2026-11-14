@@ -18,6 +18,7 @@ from jm_rag.dates import (
     date_clarification, partial_work_order_date, resolve_partial_work_order_date, resolve_relative_periods,
 )
 from jm_rag import gaps
+from jm_rag.drafting import model_answer
 from jm_rag.facts import facts_source
 from jm_rag.followup import resolve_followup
 from jm_rag.guardrails import input_guard, names, output_guard
@@ -25,18 +26,12 @@ from jm_rag.guardrails.sanitize import sanitize_sources, sanitize_text
 from jm_rag.intents import is_aggregate_question, is_history_table_request, is_work_order_table_request
 from jm_rag.notes import mandatory_notes
 from jm_rag.outcome import decide_outcome
-from jm_rag.prompt import load_system_prompt, serialize_evidence
 from jm_rag.retrieval import plan_query, retrieve
 from jm_rag.tables import format_combined_history_table, format_incident_table, format_work_order_table
 from jm_rag.tags import DOCUMENT_WORDS, machine_tags
 
 LUBE_WORDS = re.compile(r"\b(?:oils?|lubricants?|lubes?|lubrication|grease)\b", re.I)
-from jm_rag.template import build_template_answer
 
-NOT_CONFIGURED_NOTE = "The AI endpoint is not configured, so this lists the retrieved evidence directly."
-ENDPOINT_DOWN_NOTE = "The AI endpoint is unavailable, so this lists the retrieved evidence directly."
-UNVERIFIED_DRAFT_NOTE = ("The AI draft could not be verified against the evidence after one retry, so this lists "
-                         "the retrieved evidence directly.")
 
 
 def failed_sources(warnings: list[str]) -> list[str]:
@@ -87,62 +82,6 @@ def ambiguous_word(question: str, sources: list[dict]) -> tuple[str, list[str]] 
 
 MACHINE_FOLLOWERS = (r"(?:is|was|are|has|have|had|does|did|do|on|in|at|for|with|and|or|now|today|running|doing|"
                      r"working|been|status|condition|history)")
-
-
-def _call_model(client, model, messages, step, usage, trace, max_tokens):
-    started = time.perf_counter()
-    try:
-        response = client.chat.completions.create(model=model, temperature=0, max_tokens=max_tokens, messages=messages)
-    except Exception as error:  # noqa: BLE001 - any client failure means "model unavailable"
-        observability.record_call(usage, step, model, None, (time.perf_counter() - started) * 1000,
-                                  error=type(error).__name__)
-        trace.append({"step": step, "error": type(error).__name__})
-        raise
-    observability.record_call(usage, step, model, getattr(response, "usage", None),
-                              (time.perf_counter() - started) * 1000)
-    return response.choices[0].message.content or ""
-
-
-def _problems(draft: str, sources: list[dict], question: str) -> list[str]:
-    found = validator.post_check(draft, sources, question)
-    if validator.unsafe_language(draft):
-        found.append("The answer asks for or describes a safety bypass or private data. Remove it.")
-    return [sanitize_text(item) for item in found]
-
-
-def _model_answer(question, history, sources, warnings, client, model, usage, trace, errors, max_tokens):
-    """Return (answer, note). A note is set when the template was used instead of the model."""
-    if client is None:
-        return build_template_answer(sources, question), NOT_CONFIGURED_NOTE
-    evidence = serialize_evidence(sources)
-    messages = ([{"role": "system", "content": load_system_prompt()}] + history
-                + [{"role": "user", "content": f"Question: {question}\nSource availability warnings: {warnings}\n"
-                                               f"Retrieved evidence:\n{evidence}"}])
-    try:
-        draft = _call_model(client, model, messages, "answer", usage, trace, max_tokens)
-    except Exception as error:  # noqa: BLE001
-        errors.append(f"model unavailable ({type(error).__name__})")
-        return build_template_answer(sources, question), ENDPOINT_DOWN_NOTE
-    problems = _problems(draft, sources, question)
-    trace.append({"step": "post_check", "attempt": 1, "problems": len(problems)})
-    if not problems:
-        return draft, None
-    retry_messages = messages + [
-        {"role": "assistant", "content": sanitize_text(draft)},
-        {"role": "user", "content": "Your answer failed these checks:\n- " + "\n- ".join(problems)
-         + "\nRewrite it using only the retrieved evidence. Cite every fact as [S#]. Do not use numbers, "
-           "identifiers or quotations that are not in the cited evidence."}]
-    try:
-        draft = _call_model(client, model, retry_messages, "retry", usage, trace, max_tokens)
-    except Exception as error:  # noqa: BLE001
-        errors.append(f"model unavailable on retry ({type(error).__name__})")
-        return build_template_answer(sources, question), ENDPOINT_DOWN_NOTE
-    problems = _problems(draft, sources, question)
-    trace.append({"step": "post_check", "attempt": 2, "problems": len(problems)})
-    if not problems:
-        return draft, None
-    errors.append("model answer failed validation twice; template used")
-    return build_template_answer(sources, question), UNVERIFIED_DRAFT_NOTE
 
 
 def _gap_notes(question: str, sources: list[dict], all_sources: list[dict]) -> tuple[list[str], bool]:
@@ -295,7 +234,8 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         extra = sanitize_sources(extra)
         sources = sources + [{**source, "id": f"S{len(sources) + position + 1}"} for position, source in enumerate(extra)]
         trace.append({"step": "facts", "computed": bool(computed)})
-        body, note = _model_answer(question, history, sources, sanitize_text(str(warnings)), client, model,
+        body, note = model_answer(question, retrieval_question, history, sources, sanitize_text(str(warnings)), client,
+                                  model,
                                    usage, trace, errors, max_tokens)
         path = "template" if note else "model"
     trace.append({"step": "path", "path": path})

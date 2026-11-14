@@ -34,7 +34,7 @@ Options: `--set main,manager,legit,offline,hostile`, `--file <yaml>`, `--tier 1,
 
 A run exits non-zero on any failure in: refusal cases (anywhere), the hostile set, the legitimate set, tier 1 of the main and offline sets, and in e2e when tier 2 of the main set is below 90%. Tier 2 and 3 failures in other modes and every manager failure are printed and written but do not gate.
 
-In `retrieval` and `offline` modes without a model, `must_include` may be found in the retrieved evidence (including the computed facts), not only in the answer text, because no model wrote the answer. The runner lists those cases ("found only in the evidence") so the leniency is visible.
+`must_include` is checked against the answer text only, in every mode. Without a model the answer is the deterministic template, which shows only the computed facts that answer the question (a group header, the clauses holding a required value, and clauses on a topic the question names) and the SOP lines that match the question. The full evidence stays in the evidence panel but cannot satisfy a check.
 
 ## Cost
 

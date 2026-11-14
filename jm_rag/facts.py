@@ -206,6 +206,20 @@ def sensor_facts(records: list[dict]) -> list[str]:
     return lines
 
 
+def _fahrenheit(lines: list[str]) -> list[str]:
+    """Code-converted Fahrenheit values for the temperatures in the sensor facts (the data is stored in Celsius)."""
+    out = []
+    for line in lines:
+        machine = re.match(r"Sensor months for (\S+):", line)
+        values = re.findall(r"((?:mean|maximum) temperature) lowest ([\d.]+) C \(([^)]+)\), highest ([\d.]+) C \(([^)]+)\)", line)
+        if not machine or not values:
+            continue
+        shown = "; ".join(f"{label} lowest {float(low) * 9 / 5 + 32:.1f} F ({low_month}), highest {float(high) * 9 / 5 + 32:.1f} F "
+                          f"({high_month})" for label, low, low_month, high, high_month in values)
+        out.append(f"Temperatures for {machine.group(1)} are stored in Celsius; converted by code to Fahrenheit: {shown}.")
+    return out
+
+
 def _month_name(month: str) -> str:
     return date.fromisoformat(month + "-01").strftime("%b %Y")
 
@@ -308,6 +322,8 @@ def facts_source(question: str, all_sources: list[dict]) -> dict | None:
             lines.append(line)
     if not lines:
         return None
+    if re.search(r"\bfahrenheit\b|°\s*f\b|\bdeg(?:rees)?\s*f\b", question, re.I):
+        lines += _fahrenheit(lines)
     text = ("Facts computed by code from all matching records, not only the ones shown. "
             "Use these for counts, totals, minima, maxima and date ranges. " + " ".join(lines)
             + f" The data ends on {DATA_END:%d %b %Y}.")

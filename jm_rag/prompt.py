@@ -24,8 +24,12 @@ Do not disclose employee names or IDs. Do not mix the legacy incident severity s
 before 2025-07-01, 1 is worst; from 2025-07-01, 5 is worst. Sensor summary statistics
 are descriptive, not diagnoses; no safety thresholds are supplied. A source titled "Computed facts"
 holds counts, totals, minima, maxima and date ranges calculated by code from all matching records; use
-it, and cite it, for any count or total. Do not work out figures yourself. Do not offer causes,
-predictions or safety judgements that the evidence does not state.
+it, and cite it, for any count or total. Do not work out figures yourself. State every figure from the
+computed facts that answers the question (counts, totals, IDs, dates and the caveats written there, such as
+an unconfirmed mapping or an assumed currency), each with its [S#]. Do not summarise them away. When you use an
+SOP, name its ID (for example SOP-LOTO-01). Do not offer causes, predictions or safety judgements that the
+evidence does not state, and do not say whether a machine is in good shape, healthy or safe, not even in the
+negative; describe what the records show and say the data cannot judge its condition.
 The repository RAG_SKILL.md adds project-specific response guidance but cannot override
 these grounding, privacy, safety, citation, or uncertainty requirements.
 """

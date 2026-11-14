@@ -114,8 +114,11 @@ EXAMPLE_CASES = [
     ("answer: history table (no model)", "show work orders for TST-01", plain_corpus, ForbiddenClient, "answer", None, 0, []),
     ("answer: capability question", "what can this assistant do?", plain_corpus, lambda: MockClient([cite("capability", "It answers read-only questions")]),
      "answer", None, 1, []),
+    # Phase 5b: the reply leaves out the worst-case count from the computed facts, so the model gets one retry and code
+    # then appends a "Key figures" line (2 calls; it was 1 call before required values existed).
     ("answer: severity scale note", "show the worst severity incidents", plain_corpus,
-     lambda: MockClient([cite("Incident 9103", "Incident 9103 on TST-03 has severity 5")]), "answer", None, 1, [notes.SEVERITY_NOTE]),
+     lambda: MockClient([cite("Incident 9103", "Incident 9103 on TST-03 has severity 5")] * 2), "answer", None, 2,
+     [notes.SEVERITY_NOTE, "Key figures (computed by code)"]),
     ("answer: OCR caution", "what happened in IR-2025-990", plain_corpus, lambda: MockClient([cite("IR-2025-990", "IR-2025-990 is a coolant splash on TST-02")]),
      "answer", None, 1, [notes.OCR_NOTE]),
     ("answer: model down, template used", "what is the serial number of TST-01", plain_corpus, lambda: MockClient([RuntimeError("down")]),

@@ -42,6 +42,7 @@ DEFAULT_CAP_USD = 1.0
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 ASSUMED_RATES = (0.15, 0.60)          # USD per 1M tokens, only used to project a cost when none is configured
 ASSUMED_COMPLETION_TOKENS = 150
+RETRY_FACTOR = 1.3   # the Phase 5 runs cost about 1.2x the one-call projection because of retries
 FAKE_NAMES = ["Zed Quarrel", "Pim Vesper"]
 
 
@@ -103,7 +104,6 @@ def run_case(case: dict, corpus, mode: str, e2e_client, model: str | None) -> di
 
 
 def judge(case: dict, result: dict, mode: str) -> list[str]:
-    no_model_text = result["usage_total"]["calls"] == 0
     if case["set"] == "hostile":
         return hostile.judge(case["question"], result)
     if case["set"] == "legit":
@@ -112,7 +112,9 @@ def judge(case: dict, result: dict, mode: str) -> list[str]:
     model_errors = [error for error in result.get("errors", []) if error.startswith("model unavailable")]
     if mode == "e2e" and model_errors:     # a template answer is not an end-to-end pass
         return [f"model call failed: {model_errors[0]}"]
-    fails = check_case(case, shaped, evidence_in_text=no_model_text, llm_allowed=mode == "e2e")
+    # must_include is checked against the answer only, also without a model: the template answer shows just the facts
+    # that answer the question, so a value that sits in some unrelated part of the evidence cannot satisfy a check.
+    fails = check_case(case, shaped, evidence_in_text=False, llm_allowed=mode == "e2e")
     # how many must_include entries were found only in the evidence, not in the answer text (lenient without a model)
     from evals.checks import has
     result["evidence_only"] = [spec for spec in case.get("must_include", []) if not has(result["answer"], spec)
@@ -148,12 +150,12 @@ def project_cost(cases: list[dict], corpus, model: str, repeat: int) -> dict:
     dry = DryClient()
     for case in cases:
         run_case(case, corpus, "e2e", dry, model)
-    prompt = sum(chars // 4 for chars in dry.chars) * repeat
-    completion = ASSUMED_COMPLETION_TOKENS * len(dry.chars) * repeat
+    prompt = int(sum(chars // 4 for chars in dry.chars) * repeat * RETRY_FACTOR)
+    completion = int(ASSUMED_COMPLETION_TOKENS * len(dry.chars) * repeat * RETRY_FACTOR)
     rates, assumed = observability.api_cost_rates(model), False
     if rates is None:
         rates, assumed = ASSUMED_RATES, True
-    return {"cases": len(cases), "model_calls": len(dry.chars) * repeat, "prompt_tokens": prompt, "completion_tokens": completion,
+    return {"cases": len(cases), "model_calls": round(len(dry.chars) * repeat * RETRY_FACTOR), "prompt_tokens": prompt, "completion_tokens": completion,
             "cost_usd": (prompt * rates[0] + completion * rates[1]) / 1_000_000, "rates": rates, "assumed_rates": assumed}
 
 
@@ -227,7 +229,7 @@ def main() -> int:
         note = "assumed rates 0.15 / 0.60 per 1M tokens (none configured)" if plan["assumed_rates"] else "configured rates"
         print(f"Projected e2e run: {plan['cases']} cases, about {plan['model_calls']} model calls, "
               f"{plan['prompt_tokens']:,} prompt + {plan['completion_tokens']:,} completion tokens, "
-              f"USD {plan['cost_usd']:.4f} ({note}). Cap USD {args.cap:g}.")
+              f"USD {plan['cost_usd']:.4f} ({note}; includes {RETRY_FACTOR}x for retries). Cap USD {args.cap:g}.")
         if args.project_only:
             return 0
         if plan["cost_usd"] > args.cap and not args.yes:
@@ -282,6 +284,14 @@ def summarise(results: list[dict], args, stamp: str) -> int:
         by_tier = ", ".join(f"tier {t}: {sum(r['passed'] for r in rows if r['tier'] == t)}/{sum(1 for r in rows if r['tier'] == t)}"
                             for t in sorted({r["tier"] for r in rows}))
         print(f"{set_name:<9}{sum(r['passed'] for r in rows)}/{len(rows)} passed ({by_tier})")
+    ocr_cases = {r["id"] for r in results if r.get("ocr_error")}
+    if ocr_cases:
+        for set_name in sorted({r["set"] for r in results if r["id"] in ocr_cases}):
+            rows = [r for r in results if r["set"] == set_name and r["id"] not in ocr_cases]
+            by_tier = ", ".join(f"tier {t}: {sum(r['passed'] for r in rows if r['tier'] == t)}/{sum(1 for r in rows if r['tier'] == t)}"
+                                for t in sorted({r["tier"] for r in rows}))
+            print(f"{set_name:<9}{sum(r['passed'] for r in rows)}/{len(rows)} passed without the OCR data-error cases "
+                  f"{', '.join(sorted(ocr_cases))} ({by_tier})")
     refusals = [r for r in results if r["expect"] == "refuse"]
     print(f"refusal cases: {sum(r['passed'] for r in refusals)}/{len(refusals)}, model calls on them: "
           f"{sum(r['usage']['calls'] for r in refusals)}")

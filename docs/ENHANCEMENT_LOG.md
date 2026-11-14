@@ -272,3 +272,14 @@ Human decisions (Section 10), 14 Nov 2026: commit the eval cases with only machi
 Results before e2e: unit tests 484, all pass. Offline: all sets pass, refusals 9/9 with no model call. Retrieval: main 66/69 (tier 1 29/29, tier 2 25/27, tier 3 12/13), added 8/8, manager 18/20, legitimate 72/72, hostile 40/40, refusals 8/8 with no model call. Failures: N4 and N10 (OCR data errors), X4, Q3, Q15.
 
 Known weakness: in retrieval mode N6 passes although the OCR misses CNC-01 and CRN-02, because those IDs appear elsewhere in the computed lubricant facts ("unreadable text", "no lubricant read"). `must_include` is a plain substring check; e2e checks the model's wording.
+
+## Phase 5 e2e runs (approved, cap USD 1)
+
+- **First attempt failed without spending.** Every model call raised `APIConnectionError` (cause `UnsupportedProtocol`). `.env` has `OPENAI_BASE_URL=` (empty). The runner passed `base_url=None`, so the OpenAI SDK fell back to the environment variable and got an empty URL. No request reached the API; 86 calls were logged with zero tokens and no cost. The runner also counted those template answers as passes, which was wrong.
+- **Fixes:** `evals/run.py` and `app.py` now pass the default endpoint when `OPENAI_BASE_URL` is empty. `app.py` had the same bug, so the Streamlit app could not reach the model with this `.env` either; it showed "The AI endpoint is unavailable" and the template. In e2e mode a case whose model call failed now fails ("model call failed"), instead of passing on the template.
+- One 11-token check call confirmed the connection.
+- **Tier 1, `--repeat 2`:** projected USD 0.055, actual USD 0.0697. Main 26/29, added 4/5, manager 9/11, refusals 4/4 with no model call. Failures I1, I3, W1, A4, Q1, Q3, the same in both runs.
+- **Full main, added and manager sets, once:** projected USD 0.053, actual USD 0.0640. Main 56/69 (tier 1 25/29, tier 2 21/27, tier 3 10/13), added 7/8, manager 16/20, refusals 8/8 with no model call. Gating failures: I1, I2, I3, W1, A4, and tier 2 below 90%. OCR data errors: N4, N6, N10.
+- **Total eval spend:** USD 0.1337.
+- **Main finding:** the model often drops counts, IDs and caveats that are in the computed facts. The retrieval-mode template carries them. Not fixed in this phase (stop-and-report).
+- Projections were about 20% low because retries are not projected.

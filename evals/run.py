@@ -39,6 +39,7 @@ MODE_SETS = {"offline": ["offline", "main", "added", "manager", "legit", "hostil
              "retrieval": ["main", "added", "manager", "legit", "hostile"], "e2e": ["main", "added", "manager"]}
 OCR_LABEL = "OCR data error, fix via OCR Review"
 DEFAULT_CAP_USD = 1.0
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
 ASSUMED_RATES = (0.15, 0.60)          # USD per 1M tokens, only used to project a cost when none is configured
 ASSUMED_COMPLETION_TOKENS = 150
 FAKE_NAMES = ["Zed Quarrel", "Pim Vesper"]
@@ -108,6 +109,9 @@ def judge(case: dict, result: dict, mode: str) -> list[str]:
     if case["set"] == "legit":
         return [] if result["outcome"] != "refuse" else [f"refused ({result['refusal_class']})"]
     shaped = {**result, "usage": result["usage_total"]}
+    model_errors = [error for error in result.get("errors", []) if error.startswith("model unavailable")]
+    if mode == "e2e" and model_errors:     # a template answer is not an end-to-end pass
+        return [f"model call failed: {model_errors[0]}"]
     fails = check_case(case, shaped, evidence_in_text=no_model_text, llm_allowed=mode == "e2e")
     # how many must_include entries were found only in the evidence, not in the answer text (lenient without a model)
     from evals.checks import has
@@ -160,7 +164,10 @@ def build_e2e_client():
     load_dotenv(ROOT / ".env", override=True)
     if not os.getenv("OPENAI_API_KEY"):
         sys.exit("OPENAI_API_KEY is not set; e2e needs the classroom endpoint.")
-    return OpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=os.getenv("OPENAI_BASE_URL") or None, timeout=30, max_retries=1)
+    # An empty OPENAI_BASE_URL in .env must not reach the client: the SDK reads the variable itself and fails with
+    # "UnsupportedProtocol" on an empty URL, so the default endpoint is passed explicitly.
+    return OpenAI(api_key=os.environ["OPENAI_API_KEY"], base_url=os.getenv("OPENAI_BASE_URL") or DEFAULT_BASE_URL,
+                  timeout=30, max_retries=1)
 
 
 def select(args) -> list[dict]:

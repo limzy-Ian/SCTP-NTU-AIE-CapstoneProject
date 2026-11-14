@@ -1,51 +1,64 @@
 # Eval results
 
-Latest run: 14 Nov 2026, branch `enhance/rag-hardening`. Counts only. Commands from `evals/README.md`.
+Latest runs: 14 Nov 2026, branch `enhance/rag-hardening`. Counts only. Commands are in `evals/README.md`. Expected values for nameplate and incident cases are the team's checked readings; failures caused by this repo's OCR are labelled "OCR data error, fix via OCR Review".
 
-## Offline (`python -m evals.run --mode offline`)
+## Offline (`--mode offline`)
 
-Fixture corpus, scripted mock model, no MySQL, no network.
+Fixture corpus, scripted mock model. Offline cases 20/20, main-set refusals 7/7, manager refusal 1/1, legitimate questions 72/72, hostile prompts 40/40. Refusals 9/9 with no model call.
+
+## Retrieval (`--mode retrieval`)
+
+Live data, no model. Main 66/69 (tier 1 29/29, tier 2 25/27, tier 3 12/13), added 8/8, manager 18/20, legitimate 72/72, hostile 40/40, refusals 8/8 with no model call. Cost USD 0.
+
+Failures: N4 and N10 (OCR data errors), X4 (tier 3), manager Q3 and Q15.
+
+## End to end (`--mode e2e`, gpt-4o-mini)
+
+### Tier 1, `--repeat 2`
+
+Projected USD 0.055; actual USD 0.0697 (103 model calls including retries, 380,923 prompt + 20,979 completion tokens).
 
 | Set | Passed |
 |---|---|
-| offline cases | 20/20 |
-| main set, refusal cases only | 7/7 |
-| manager set, refusal case only | 1/1 |
-| legitimate questions (never refused) | 72/72 |
-| hostile prompts (23 ported + 17 own) | 40/40 |
-| refusal cases | 9/9, 0 model calls |
+| main tier 1 | 26/29 |
+| added tier 1 | 4/5 |
+| manager tier 1 | 9/11 |
+| refusals | 4/4, no model call |
 
-Mock usage: 10 model calls, 900 prompt + 180 completion tokens, no price configured for the mock.
+Failures: I1, I3, W1, A4 (main/added, gating), Q1, Q3 (manager). Every failed case failed the same way in both runs; no outcome changed between runs.
 
-## Retrieval (`python -m evals.run --mode retrieval`)
+### Full main, added and manager sets, once
 
-Live MySQL and files, no model; answers are the deterministic tables and template.
+Projected USD 0.053; actual USD 0.0640 (100 model calls, 356,560 prompt + 17,554 completion tokens).
 
 | Set | Passed | Tier 1 | Tier 2 | Tier 3 |
 |---|---|---|---|---|
-| main (69) | 68 | 29/29 | 27/27 | 12/13 |
-| manager (20, held out) | 15 | 7/11 | 8/9 | n/a |
-| legitimate questions (72) | 72 | | | |
-| hostile prompts (40) | 40 | | | |
-| refusal cases | 8/8, 0 model calls | | | |
+| main (69) | 56 | 25/29 | 21/27 (78%, below the 90% target) | 10/13 |
+| added (8) | 7 | 4/5 | 3/3 | |
+| manager (20) | 16 | 9/11 | 7/9 | |
+| refusals | 8/8, no model call | | | |
 
-Cost: 0 model calls, USD 0.
+| Case | Tier | Failure | Kind |
+|---|---|---|---|
+| N4, N6, N10 | 2 | values from wrong OCR readings | OCR data error, fix via OCR Review |
+| I1 | 1 | answer omits that the scale mapping is unconfirmed | model left out a computed caveat |
+| I2 | 1 | answer omits the normalised counts (27, 11, "least severe") | model left out computed facts (passed in the tier 1 run) |
+| I3 | 1 | answer omits the incident ID 978 | model left out computed facts |
+| W1 | 1 | answer omits the count 34 and the data-end date | model left out computed facts |
+| A4 | 1 | answer lists 2 of the 3 parts below minimum | model left out computed facts |
+| S6 | 3 | no currency caveat | model left out computed facts |
+| I8 | 2 | lists 2 of the 4 near misses with lost days | model left out computed facts |
+| I13 | 2 | no date of the latest incident | model left out computed facts |
+| V6 | 2 | no data-end date | model left out computed facts |
+| V9 | 3 | does not say values are in Celsius | wording |
+| X4 | 3 | cross-source question not implemented | pipeline gap |
+| Q1 | 1 (manager) | answer contains "is in good shape" | wording |
+| Q3 | 1 (manager) | CNC-02 summary has no oil conflict | pipeline gap |
+| Q15 | 2 (manager) | machines without sensors not listed | pipeline gap |
+| Q18 | 2 (manager) | LOTO SOP summary does not name "LOTO" | wording |
 
-Eight main cases passed with at least one `must_include` value found only in the retrieved evidence or computed facts, not in the answer text (N4, V8, V9, P1, P2, P3, P4, P6). Without a model the template lists records rather than phrasing an answer; e2e checks the answer text itself.
+The main pattern: the computed facts are in the evidence, but the model summarises and drops counts, IDs and caveats that the cases check for. The retrieval-mode template shows them; the model's wording often does not.
 
-### Failures
+### Total e2e spend so far
 
-| Case | Set | Tier | Expected | Got | Note |
-|---|---|---|---|---|---|
-| X4 | main | 3 | answer with "30 Jun" | answer without it | "Which machines have open work orders but no sensor data?" goes to the work-order table, which carries no data-end date. Cross-source join not implemented. |
-| Q3 | manager | 1 | conflict | answer | "Quick summary of CNC-02" does not retrieve the oil, so the `ALL` lubricant conflict is not raised. |
-| Q6 | manager | 1 | BRG-6310, LS-CXT-11 | missing | "Do we need to order anything urgently?" is not read as a spares question. |
-| Q8 | manager | 1 | 34 | missing | "last year" is not resolved to 2025 (plan assumption A14 is not implemented yet). |
-| Q15 | manager | 2 | BLAST-01 | missing | The answer lists the machines with sensors but not the ones without. |
-| Q20 | manager | 1 | abstain | clarify | False positive in the new "the <word>" machine clarification: "the crane sling" is read as an ambiguous crane (CRN-01 or CRN-02). |
-
-The manager cases are held out and were not used to tune anything; these failures are reported, not fixed.
-
-## End to end
-
-Not run yet. Projected (no model called): all 89 main and manager cases, about 78 model calls, 266,444 prompt + 11,700 completion tokens, USD 0.047 at the configured 0.15 / 0.60 USD per 1M tokens. Tier 1 with `--repeat 2`: 74 calls, USD 0.046. Retries can add up to one call per case, so the worst case is about twice these figures.
+USD 0.1337 across 289 logged eval model calls (`logs/spend.jsonl`, source "eval"). This includes 86 calls from a first attempt that never reached the API (see the log), recorded with zero tokens and no cost.

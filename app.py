@@ -414,7 +414,7 @@ def render_chat():
                 try:
                     client = OpenAI(
                         api_key=os.environ["OPENAI_API_KEY"],
-                        base_url=os.getenv("OPENAI_BASE_URL") or None,
+                        base_url=os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1",  # empty in .env breaks the SDK
                         timeout=30, max_retries=1,
                     )
                     evidence = serialize_evidence(sources)

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 
 from jm_rag import config
+from jm_rag.guardrails.sanitize import sanitize_sources
 
 
 SYSTEM_PROMPT = """You are a read-only Jurong Marine maintenance assistant.
@@ -54,4 +55,5 @@ def load_system_prompt() -> str:
 
 
 def serialize_evidence(sources: list[dict]) -> str:
-    return json.dumps(sources, ensure_ascii=True, default=str)
+    # evidence sent to the model never carries names, IDs, keys or the reviewer field
+    return json.dumps(sanitize_sources(sources), ensure_ascii=True, default=str)

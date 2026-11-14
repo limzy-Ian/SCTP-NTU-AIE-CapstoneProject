@@ -1,1 +1,1 @@
-﻿"""Maintenance RAG assistant package."""
+"""Maintenance RAG assistant package."""

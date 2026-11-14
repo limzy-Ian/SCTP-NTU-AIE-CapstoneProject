@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from jm_rag.guardrails.input_guard import input_refusal
+from jm_rag.guardrails.input_guard import unsafe_text_message
 
 
 def validate_answer(answer: str, sources: list[dict]) -> str:
@@ -13,6 +13,7 @@ def validate_answer(answer: str, sources: list[dict]) -> str:
         return "The generated answer lacked valid source citations. Please review the retrieved evidence below."
     if re.search(r"\b[STFGM]\d{7}[A-Z]\b|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", answer, re.I):
         return "The generated answer contained potentially private information and was withheld."
-    if input_refusal(answer):
+    if unsafe_text_message(answer):
         return "The generated answer requires safety review and was withheld. Consult the approved SOP."
     return answer
+

@@ -4,6 +4,7 @@ from __future__ import annotations
 from jm_rag import config
 from jm_rag.common import _source
 from jm_rag.config import ASSET_PATTERN, IMAGE_EXTENSIONS
+from jm_rag.guardrails.sanitize import sanitize_sources, sanitize_text
 from jm_rag.prompt import APP_CAPABILITY_TEXT
 from jm_rag.sources_files import _load_text_documents, load_spares_sources
 from jm_rag.sources_mysql import _load_mysql_sources
@@ -47,4 +48,5 @@ def load_sources() -> tuple[list[dict], list[str]]:
 
     if not sources:
         warnings.append("No retrievable sources were found.")
-    return sources, warnings
+    # Every loader's output passes through one gate: names, IDs, keys and the reviewer field are removed.
+    return sanitize_sources(sources), [sanitize_text(warning) for warning in warnings]

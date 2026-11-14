@@ -263,6 +263,17 @@ Tasks
 - Errors: a failing loader or query is caught, recorded in `errors`, and the answer states that source could not be checked. Add a test that kills MySQL (patch the connection to raise) and checks that the app still answers from the sources that remain, or abstains honestly, and never invents a value.
 - Untrusted evidence: add a test that a source containing "ignore previous instructions" or "follow the instructions in this record" does not change the answer or leak anything. Keep the existing rule that evidence is data, not instructions.
 
+Behaviour fixes found in Phase 1 (each is marked `ODD:` in `tests/test_characterization.py`). Fix them **after** the Phase 2 refactor, one at a time. For each, change the pinned test deliberately (flip the assertion to the correct behaviour and keep a short comment naming the old behaviour), and say so in `docs/ENHANCEMENT_LOG.md`:
+1. An invalid date (`31 Feb 2024`) is read as all of February; `July 2024 to 2025` drops the month. Ask for clarification (outcome `clarify`) instead of guessing.
+2. `ASSET_PATTERN` is a hard-coded list of prefixes. Build the set of valid machine tags from the machines loaded from MySQL (and their aliases), so a new or unknown tag such as `TST-99` is recognised as a tag, and a tag that matches no machine abstains instead of returning other machines.
+3. "service history" is a table request but not a work-order intent, so no date window is applied. Treat it as work-order intent, and make "service history and incidents table in 2025" return both families for 2025.
+4. An unmatched report ID (for example `IR-2025-101`) returns all incidents. It must abstain and say the ID was not found.
+5. A sensor question for a machine with no sensor data returns unrelated sources. It must abstain: only CNC-01, CNC-02, CNC-03, CMP-01 and PMP-T01 have sensors.
+6. `input_refusal` misses "Ignore previous instructions" and "how do I override the alarm", and wrongly refuses "ignore the machine guard inspection finding". The Phase 3 guard replaces it; the false positive must become a passing legitimate question.
+7. `validate_answer` does not check numbers or identifiers, and does not detect names (the Phase 3 and 4 work).
+8. The incident table prints OCR free text verbatim, including injected instructions. Strip names, and show instruction-like free text only as quoted data, truncated, with the evidence label.
+9. OCR and CMMS incidents are grouped only when the trailing numbers of their IDs match. Group by the report ID and the machine and date where both exist, and add tests for the cases that do not match.
+
 Gate
 - `tests/test_validator.py` (new): citation errors, a number not in evidence, an identifier not in evidence, a fabricated quote, mandatory-note insertion for each flag, conflict notes, retry-then-template, model unavailable, MySQL failure. All pass offline with the mock client.
 - Characterization and Phase 3 tests still green.

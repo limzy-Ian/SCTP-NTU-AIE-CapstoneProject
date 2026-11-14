@@ -15,11 +15,13 @@ from openai import OpenAI, OpenAIError
 
 from scripts.maintenance_rag import (
     ASSET_PATTERN, ROOT, format_combined_history_table, format_incident_table,
-    format_work_order_table, input_refusal, is_history_table_request,
+    format_work_order_table, is_history_table_request,
     is_work_order_table_request, load_sources, load_system_prompt,
     partial_work_order_date, resolve_partial_work_order_date, retrieve,
     serialize_evidence, validate_answer,
 )
+from jm_rag.guardrails import input_guard, names, output_guard
+from jm_rag.guardrails.sanitize import sanitize_message, sanitize_source, sanitize_sources
 from scripts.chat_history import (
     append_chat_turn, create_chat, delete_chat, ensure_chat_schema,
     list_chats, load_chat_messages,
@@ -54,6 +56,7 @@ def estimate_api_cost(usage, model):
 
 def show_evidence(sources):
     for source in sources:
+        source = sanitize_source(source)
         with st.expander(f"[{source['id']}] {source['title']}"):
             st.caption(source["location"])
             st.text(source["text"])
@@ -310,6 +313,8 @@ def render_chat():
             st.caption("CMMS records are read-only. OCR values require human review.")
             st.caption("Assistant guidance: RAG_SKILL.md is loaded on each question.")
             st.caption("Chat history is stored in MySQL and shared by users of this local database.")
+            if not names.terms_loaded():
+                st.warning("Name screening list not loaded: run scripts/build_guard_terms.py. Names cannot be screened until then.")
             with st.expander("What I can handle"):
                 st.markdown(
                     "**Service history**\n"
@@ -366,7 +371,8 @@ def render_chat():
             else:
                 st.caption("Set OPENAI_INPUT_COST_PER_1M_USD and OPENAI_OUTPUT_COST_PER_1M_USD for this endpoint/model.")
 
-        messages = load_chat_messages(connection, active_id) if active_id else []
+        messages = [sanitize_message(message) for message in
+                    (load_chat_messages(connection, active_id) if active_id else [])]
         connection.close()
         connection = None
     except Exception as error:
@@ -389,7 +395,8 @@ def render_chat():
     sources, warnings, tokens = [], [], 0
     request_cost = None
     started = time.perf_counter()
-    answer = input_refusal(question)
+    guard = input_guard.check(question, has_history=bool(messages))
+    answer = guard["message"] if guard["verdict"] == "refuse" else None
     ambiguous_date = partial_work_order_date(question)
     if answer is None and ambiguous_date:
         day, month, raw_date = ambiguous_date
@@ -409,7 +416,8 @@ def render_chat():
             table_request = is_history_table_request(retrieval_question)
             combined_history = bool(re.search(r"\b(?:incident|near.miss)\b", retrieval_question, re.I)
                                     and re.search(r"\b(?:service|servicing|work.order|maintenance)\b", retrieval_question, re.I))
-            sources = retrieve(retrieval_question, corpus, limit=50 if combined_history else 10 if table_request else 5)
+            sources = sanitize_sources(retrieve(
+                retrieval_question, corpus, limit=50 if combined_history else 10 if table_request else 5))
             if not sources:
                 if combined_history:
                     answer = "I couldn't find matching incident or service records for the requested period in MySQL."
@@ -449,6 +457,7 @@ def render_chat():
                         st.session_state.api_cost_total_usd += request_cost
                 except OpenAIError:
                     answer = "The AI endpoint is unavailable. I could not generate an answer; review the retrieved evidence below."
+    answer = output_guard.check(answer)["answer"]  # last check: names, IDs, keys, internal markers
     for warning in warnings:
         st.warning(warning)
     st.markdown(answer)

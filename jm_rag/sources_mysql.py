@@ -45,7 +45,7 @@ def _load_mysql_sources(sources: list[dict], warnings: list[str]) -> set[str]:
                 s.lubricant, s.grease_interval_hours, s.needs_review,
                 s.flags_json, r.source_file, r.ocr_confidence,
                 m.machine_name, m.model AS cmms_model, r.source_key AS record_key,
-                d.review_status, d.reviewer, d.notes, d.corrections
+                d.review_status, d.notes, d.corrections
                 FROM nameplate_assets_staging s
                 JOIN nameplate_ocr_raw r ON r.id = s.raw_id
                 LEFT JOIN machines m ON m.machine_id = s.asset_tag
@@ -53,6 +53,7 @@ def _load_mysql_sources(sources: list[dict], warnings: list[str]) -> set[str]:
                 ORDER BY s.asset_tag""", "nameplate staging", warnings)
             for database_row in nameplate_rows:
                 row, trust = effective_record(database_row)
+                row.pop("reviewer", None)  # reviewer identity is personal data; never put it in evidence
                 row["evidence_status"] = trust
                 image_names.add(row["source_file"])
                 filename_match = ASSET_PATTERN.search(Path(row["source_file"]).stem.replace("_", " ").upper())
@@ -124,12 +125,13 @@ def _load_mysql_sources(sources: list[dict], warnings: list[str]) -> set[str]:
                 o.scale_source, o.severity_5_worst, o.lost_days, o.reporting,
                 o.immediate_action, o.root_cause_reference, o.image_path,
                 o.ocr_confidence, o.extraction_flags, o.ocr_raw_json,
-                o.review_status AS ingest_status, d.review_status, d.reviewer,
+                o.review_status AS ingest_status, d.review_status,
                 d.notes, d.corrections
                 FROM incident_report_ocr o LEFT JOIN ocr_review_decisions d
                 ON d.record_type='incident' AND d.record_key=o.report_no
                 ORDER BY o.incident_date DESC""", "incident OCR staging", warnings):
                 row, trust = effective_record(database_row)
+                row.pop("reviewer", None)  # reviewer identity is personal data; never put it in evidence
                 filename = Path(row["image_path"]).name
                 image_names.add(filename)
                 review_flags = row.get("extraction_flags")

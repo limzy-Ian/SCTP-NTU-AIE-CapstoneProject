@@ -149,8 +149,13 @@ def _finish(started, usage, trace, errors, *, answer, outcome, flags, sources=()
             "errors": errors}
 
 
-def answer_question(question, history, corpus, client, *, model=None, max_tokens=700) -> dict:
-    """Answer one question. ``corpus`` is (sources, warnings) from load_sources(); ``client`` may be None."""
+def answer_question(question, history, corpus, client, *, model=None, max_tokens=700, budget_blocked=False) -> dict:
+    """Answer one question. ``corpus`` is (sources, warnings) from load_sources(); ``client`` may be None.
+
+    ``budget_blocked``: the model budget is used up, so no model is called; deterministic paths (refusals, tables,
+    the template) still answer and the answer says the budget is used up."""
+    if budget_blocked:
+        client = None
     started = time.perf_counter()
     usage, trace, errors = observability.new_usage(), [], []
     all_sources, warnings = corpus if isinstance(corpus, tuple) else (corpus, [])
@@ -186,18 +191,19 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         return _finish(started, usage, trace, errors, answer=text, outcome="clarify", flags=flags)
 
     previous = next((item["content"] for item in reversed(history) if item["role"] == "user"), "")
-    retrieval_question = question
+    retrieval_question = topic_question = question
     if re.fullmatch(r"20\d{2}", question.strip()):
         if partial_work_order_date(previous):
             retrieval_question = resolve_partial_work_order_date(previous, int(question.strip()))
     elif resolve_followup(question, previous):
         retrieval_question = resolve_followup(question, previous)
+        topic_question = retrieval_question   # "and CNC-03?" carries the previous topic into conflicts and notes
     elif not any(character.isdigit() for character in question):
         retrieval_question = (previous + " " + question).strip()
     retrieval_question = resolve_relative_periods(retrieval_question)   # "last year" is 2025 (A14)
     aggregate = is_aggregate_question(retrieval_question)
     # "I am servicing CNC-02, which procedure applies and what oil" is not a request for a service-history table
-    other_topic = bool(DOCUMENT_WORDS.search(question) or LUBE_WORDS.search(question))
+    other_topic = bool(DOCUMENT_WORDS.search(topic_question) or LUBE_WORDS.search(topic_question))
     table_request = is_history_table_request(retrieval_question) and not aggregate and not other_topic
     combined = bool(re.search(r"\b(?:incidents?|near.miss(?:es)?)\b", retrieval_question, re.I)
                     and re.search(r"\b(?:service|servicing|work.order|maintenance)\b", retrieval_question, re.I)
@@ -236,16 +242,19 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         trace.append({"step": "facts", "computed": bool(computed)})
         body, note = model_answer(question, retrieval_question, history, sources, sanitize_text(str(warnings)), client,
                                   model,
-                                   usage, trace, errors, max_tokens, flags=flags)
+                                   usage, trace, errors, max_tokens, flags=flags,
+                                   no_model_note=observability.BUDGET_NOTE if budget_blocked else None)
         path = "template" if note else "model"
     trace.append({"step": "path", "path": path})
 
-    found = conflict_rules.find_conflicts(sources, question, all_sources)
+    found = conflict_rules.find_conflicts(sources, topic_question, all_sources)
     notes, gap = _gap_notes(retrieval_question, sources, all_sources)
-    notes = mandatory_notes(flags, question, sources) + notes
+    notes = mandatory_notes(flags, topic_question, sources) + notes
     notes += [item["text"] for item in found]
     if note:
         notes.append(note)
+    elif budget_blocked:
+        notes.append("The model budget is used up; this answer comes from code only, without the model.")
     if sources:
         notes += not_found  # something asked about was not found, though other evidence was
     if failed and sources:

@@ -63,11 +63,11 @@ def _missing_text(items: list[dict]) -> list[str]:
 
 
 def model_answer(question, retrieval_question, history, sources, warnings, client, model, usage, trace, errors, max_tokens,
-                 flags=None):
+                 flags=None, no_model_note=None):
     """Return (answer, note). A note is set when the template was used instead of the model."""
     required = required_values(retrieval_question, sources)
     if client is None:
-        return build_template_answer(sources, question, required), NOT_CONFIGURED_NOTE
+        return build_template_answer(sources, question, required), no_model_note or NOT_CONFIGURED_NOTE
     evidence = serialize_evidence(sources)
     messages = ([{"role": "system", "content": load_system_prompt()}] + history
                 + [{"role": "user", "content": f"Question: {question}\nSource availability warnings: {warnings}\n"

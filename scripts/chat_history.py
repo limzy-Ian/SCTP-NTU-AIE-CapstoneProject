@@ -30,11 +30,25 @@ CHAT_SCHEMA = (
 )
 
 
+# Columns added after the first release. Each is added only when missing, so the migration is safe to run any number
+# of times. cost_usd is NULL when no price was known for the model; it is never stored as a made-up 0.
+CHAT_MIGRATIONS = (
+    ("chat_messages", "cost_usd", "ALTER TABLE chat_messages ADD COLUMN cost_usd DECIMAL(14,8) NULL AFTER token_count"),
+    ("chat_messages", "outcome", "ALTER TABLE chat_messages ADD COLUMN outcome VARCHAR(16) NULL AFTER cost_usd"),
+)
+
+
 def ensure_chat_schema(connection) -> None:
     cursor = connection.cursor()
     try:
         for statement in CHAT_SCHEMA:
             cursor.execute(statement)
+        for table, column, statement in CHAT_MIGRATIONS:
+            cursor.execute(
+                "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+                "AND TABLE_NAME = %s AND COLUMN_NAME = %s", (table, column))
+            if not int(cursor.fetchone()[0]):
+                cursor.execute(statement)
         connection.commit()
     finally:
         cursor.close()
@@ -57,7 +71,7 @@ def load_chat_messages(connection, chat_id: str) -> list[dict]:
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(
-            "SELECT role, content, sources_json, token_count, created_at "
+            "SELECT role, content, sources_json, token_count, cost_usd, outcome, created_at "
             "FROM chat_messages WHERE chat_id=%s ORDER BY message_index",
             (chat_id,),
         )
@@ -95,19 +109,20 @@ def create_chat(connection, first_question: str) -> str:
 
 
 def append_chat_turn(connection, chat_id: str, user_content: str, assistant_content: str,
-                     sources: list[dict], token_count: int = 0) -> None:
+                     sources: list[dict], token_count: int = 0, cost_usd: float | None = None,
+                     outcome: str | None = None) -> None:
     cursor = connection.cursor()
     try:
         cursor.execute("SELECT COALESCE(MAX(message_index), 0) FROM chat_messages WHERE chat_id=%s", (chat_id,))
         next_index = int(cursor.fetchone()[0])
         cursor.executemany(
             """INSERT INTO chat_messages
-               (chat_id, message_index, role, content, sources_json, token_count)
-               VALUES (%s,%s,%s,%s,%s,%s)""",
+               (chat_id, message_index, role, content, sources_json, token_count, cost_usd, outcome)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
             [
-                (chat_id, next_index + 1, "user", user_content, None, 0),
+                (chat_id, next_index + 1, "user", user_content, None, 0, None, None),
                 (chat_id, next_index + 2, "assistant", assistant_content,
-                 json.dumps(sources, ensure_ascii=True, default=str), max(0, int(token_count))),
+                 json.dumps(sources, ensure_ascii=True, default=str), max(0, int(token_count)), cost_usd, outcome),
             ],
         )
         cursor.execute("UPDATE chat_sessions SET updated_at=CURRENT_TIMESTAMP WHERE chat_id=%s", (chat_id,))

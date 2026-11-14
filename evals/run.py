@@ -16,7 +16,7 @@ import json
 import re
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import yaml
@@ -32,7 +32,6 @@ from jm_rag.pipeline import answer_question  # noqa: E402
 
 EVALS = Path(__file__).parent
 OUT = EVALS / "out"
-SPEND_LOG = ROOT / "logs" / "spend.jsonl"
 SETS = {"main": "cases.yaml", "added": "added_cases.yaml", "manager": "manager_cases.yaml", "legit": "legit_regression.yaml",
         "offline": "offline_cases.yaml"}
 MODE_SETS = {"offline": ["offline", "main", "added", "manager", "legit", "hostile"],
@@ -123,14 +122,8 @@ def judge(case: dict, result: dict, mode: str) -> list[str]:
 
 
 def log_spend(case: dict, mode: str, model: str, usage: dict) -> None:
-    if not usage["calls"]:
-        return
-    SPEND_LOG.parent.mkdir(exist_ok=True)
-    entry = {"ts": datetime.now(timezone.utc).isoformat(timespec="seconds"), "source": "eval", "mode": mode, "case": case["id"],
-             "model": model, "calls": usage["calls"], "prompt": usage["prompt"], "completion": usage["completion"],
-             "cost_usd": usage["cost_usd"]}
-    with SPEND_LOG.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(entry) + "\n")
+    """Eval model spend goes to logs/spend.jsonl with source "eval" (jm_rag.observability), beside non-chat spend."""
+    observability.log_spend(source="eval", usage=usage, model=model, ref=case["id"], mode=mode)
 
 
 class DryClient:

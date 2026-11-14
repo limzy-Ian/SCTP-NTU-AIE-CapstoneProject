@@ -40,4 +40,6 @@ A run exits non-zero on any failure in: refusal cases (anywhere), the hostile se
 
 Every case prints its model calls, tokens and cost, and the run prints the total. Each e2e model call is appended to `logs/spend.jsonl` with `"source": "eval"` (git-ignored). Before an e2e run the runner prints the number of cases, the projected model calls, tokens and cost, and stops when the projection is above the cap unless `--yes` is given. The projection counts one call per case that reaches the model (prompt size measured on the real evidence, 150 completion tokens assumed); retries can add up to one more call each, so the worst case is about twice the projection. Prices come from `OPENAI_INPUT_COST_PER_1M_USD` and `OPENAI_OUTPUT_COST_PER_1M_USD`; with none set, the run shows "cost unavailable" and projects with 0.15 / 0.60 USD per 1M tokens, stated as assumed.
 
+Chat answers store their cost with the message in MySQL. `.\.venv\Scripts\python.exe -m jm_rag.observability` prints spend for today, the last 7 days and all time, split into chat and eval, plus the optional `DAILY_BUDGET_USD` and `TOTAL_BUDGET_USD` limits (both unset by default). The app also writes one line per question to `logs/requests.jsonl` (outcome, calls, tokens, cost, question length and hash; no question or answer text).
+
 Results go to `evals/out/<timestamp>-<mode>.json` (git-ignored).

@@ -870,8 +870,9 @@ class AppFlowTests(FakeNamesMixin, unittest.TestCase):
 
         saved = {}
 
-        def append_chat_turn(connection, chat_id, question_text, answer, evidence, tokens):
-            saved.update(answer=answer, sources=evidence, tokens=tokens)
+        def append_chat_turn(connection, chat_id, question_text, answer, evidence, tokens, cost_usd=None, outcome=None):
+            # Phase 6: the app also stores the cost and the outcome with the message
+            saved.update(answer=answer, sources=evidence, tokens=tokens, cost_usd=cost_usd, outcome=outcome)
 
         env = {"OPENAI_API_KEY": "sk-test-not-a-real-key-000000000000", "OPENAI_MODEL": "test-model"}
         with patch.dict("os.environ", env), \
@@ -907,7 +908,7 @@ class AppFlowTests(FakeNamesMixin, unittest.TestCase):
 
     def test_llm_answer_with_a_name_is_replaced(self):
         sources = build_fixture_sources()
-        app, saved, calls = self.run_app("what lubricant does TST-01 take", sources,
+        app, saved, calls = self.run_app("what is the serial number of TST-01", sources,
                                          model_text=f"Replaced belt by {ZED_NAME} [S1]")
         self.assertEqual(calls["model"], 1)
         self.assertEqual(saved["answer"], output_guard.SAFE_REFUSAL)
@@ -915,9 +916,11 @@ class AppFlowTests(FakeNamesMixin, unittest.TestCase):
 
     def test_clean_llm_answer_passes_through(self):
         sources = build_fixture_sources()
-        _, saved, calls = self.run_app("what lubricant does TST-01 take", sources, model_text="Oil-A [S1]")
+        _, saved, calls = self.run_app("what is the serial number of TST-01", sources, model_text="Oil-A [S1]")
         self.assertEqual(calls["model"], 1)
-        self.assertEqual(saved["answer"], "Oil-A [S1]")
+        # Phase 6: the pipeline appends code notes (OCR caution) after the model text; the model text is unchanged
+        self.assertTrue(saved["answer"].startswith("Oil-A [S1]"))
+        self.assertEqual(saved["outcome"], "answer")
 
     def test_name_in_a_source_never_reaches_the_model_answer_table_or_ui_evidence(self):
         sources = build_fixture_sources()
@@ -938,7 +941,7 @@ class AppFlowTests(FakeNamesMixin, unittest.TestCase):
         history = [{"role": "user", "content": "earlier question", "sources": [], "token_count": 0},
                    {"role": "assistant", "content": f"Earlier answer mentions {ZED_NAME}", "sources": [],
                     "token_count": 0}]
-        _, saved, calls = self.run_app("what lubricant does TST-01 take", sources, model_text="Oil-A [S1]",
+        _, saved, calls = self.run_app("what is the serial number of TST-01", sources, model_text="Oil-A [S1]",
                                        history=history)
         self.assertEqual(calls["model"], 1)
         prompt = json.dumps(calls["messages"])
@@ -948,7 +951,7 @@ class AppFlowTests(FakeNamesMixin, unittest.TestCase):
     def test_saved_chat_history_with_a_name_is_not_shown(self):
         history = [{"role": "assistant", "content": f"Old answer by {ZED_NAME}", "token_count": 0,
                     "sources": [{"id": "S1", "title": "t", "text": f"note {PIM_NAME}", "location": "l"}]}]
-        app, _, _ = self.run_app("what lubricant does TST-01 take", build_fixture_sources(), model_text="Oil-A [S1]",
+        app, _, _ = self.run_app("what is the serial number of TST-01", build_fixture_sources(), model_text="Oil-A [S1]",
                                  history=history)
         shown = " ".join(str(element.value) for element in [*app.markdown, *app.text, *app.caption])
         self.assertNotIn("Zed", shown)

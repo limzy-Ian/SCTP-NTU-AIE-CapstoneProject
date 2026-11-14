@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from types import SimpleNamespace
 
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -12,9 +13,12 @@ from jm_rag.dates import parse_date_window, parse_explicit_date, partial_work_or
 from jm_rag.intents import is_history_table_request, is_work_order_table_request
 
 
-def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
-    if not sources:
-        return []
+class Plan(SimpleNamespace):
+    """What the question is about and which sources survive the tag, date and report filters."""
+
+
+def plan_query(question: str, sources: list[dict]) -> Plan | None:
+    """Intents plus the filtered candidate sources, before any ranking. None when retrieval must return nothing."""
     tags = {match.upper() for match in ASSET_PATTERN.findall(question)}
     for source in sources:
         if not source.get("machine_record"):
@@ -57,7 +61,7 @@ def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
     if re.search(r"\b(?:incident|near.miss|severity|lost.days|injur(?:y|ies))\b", question, re.I):
         preferred_types.update({"incident", "incident_ocr", "processed_incident"})
     if work_order_intent and partial_work_order_date(question):
-        return []
+        return None
     exact_work_order_date = parse_explicit_date(question) if work_order_intent else None
     if work_order_intent:
         preferred_types.add("work_order")
@@ -108,8 +112,22 @@ def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
                                == report_years[str(source.get("incident_id"))])]
         if exact_incidents:
             candidates = exact_incidents
-    if not candidates:
+    return Plan(tags=tags, candidates=candidates, work_order_intent=work_order_intent, incident_intent=incident_intent,
+                combined_history_intent=combined_history_intent, capability_intent=capability_intent,
+                sensor_intent=sensor_intent, sensor_trend_intent=sensor_trend_intent, preferred_types=preferred_types,
+                recent_work_orders=recent_work_orders, date_window=date_window, report_keys=report_keys)
+
+
+def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
+    if not sources:
         return []
+    plan = plan_query(question, sources)
+    if plan is None or not plan.candidates:
+        return []
+    tags, candidates, preferred_types = plan.tags, plan.candidates, plan.preferred_types
+    work_order_intent, incident_intent = plan.work_order_intent, plan.incident_intent
+    combined_history_intent, capability_intent = plan.combined_history_intent, plan.capability_intent
+    sensor_trend_intent, recent_work_orders = plan.sensor_trend_intent, plan.recent_work_orders
     vectorizer = TfidfVectorizer(ngram_range=(1, 2), stop_words="english")
     try:
         matrix = vectorizer.fit_transform([source["title"] + " " + source["text"] for source in candidates])
@@ -166,3 +184,24 @@ def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
             selected = work_orders
     return [{**candidates[index], "id": f"S{position + 1}", "score": round(float(scores[index]), 3)}
             for position, index in enumerate(selected[:limit])]
+
+def matching_records(question: str, sources: list[dict]) -> dict:
+    """All records that match the question's machine, date and topic filters, before ranking and the limit.
+
+    Returns {} when the question is not about records, else the keys "tags", "window" and one list per topic
+    ("work_order", "incident", "sensor", "spares"). The computed facts are worked out from these lists.
+    """
+    plan = plan_query(question, sources) if sources else None
+    if plan is None:
+        return {}
+    by_type = lambda *types: [source for source in plan.candidates if source.get("source_type") in types]  # noqa: E731
+    found = {"tags": plan.tags, "window": plan.date_window}
+    if plan.work_order_intent:
+        found["work_order"] = by_type("work_order")
+    if plan.incident_intent:
+        found["incident"] = by_type("incident", "incident_ocr", "processed_incident")
+    if plan.sensor_intent:
+        found["sensor"] = by_type("sensor_trend_monthly")
+    if "tabular" in plan.preferred_types:
+        found["spares"] = by_type("tabular")
+    return found if len(found) > 2 else {}

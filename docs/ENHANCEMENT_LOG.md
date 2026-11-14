@@ -170,3 +170,14 @@ Date: 14 Nov 2026. The "Behaviour fixes found in Phase 1" list is Phase 4b and i
 - "Why is CNC-02 vibrating more?" retrieves nothing, because the sensor intent matches "vibration" but not "vibrating". The inference question should still show the sensor facts, with the gap stated. Add `vibrat\w*`.
 - "service history and incidents table for CNC-02 in 2025" abstains with no evidence (fix list item 3).
 - `exact_work_order_date` in `retrieval.py` is still an unused local.
+
+## Phase 4b, step 1: computed facts
+
+- `jm_rag/facts.py`: for the question's machine, date and topic filters, the code works out counts, totals, minima, maxima and date ranges over all matching records (not only the 5 or 10 shown) and offers them as one extra evidence source titled "Computed facts (calculated by code)", with its own `[S#]`. Work orders: count, date range, total, lowest and highest cost (and how many have a cost), total hours, counts by type and status (and by machine when more than one). Incidents: unique events (versions in CMMS, OCR staging and processed OCR counted once), date range, total and highest lost days, severity counts kept apart per scale. Sensor months: month range, lowest and highest monthly mean and maximum vibration and temperature with the month. Spares: row count, total quantity, how many are below minimum (part numbers listed), unit cost range.
+- `retrieval.py` was split into `plan_query` (intents plus the filtered candidates) and `retrieve` (ranking), behaviour unchanged, plus `matching_records` for the facts. All 347 earlier tests stayed green after the split.
+- `pipeline.py` adds the facts source on the model path. Count, total and extreme questions ("how many work orders", "total cost", "highest") now go to the model path instead of a history table (`is_aggregate_question`), so a count can be answered. `template.py` always includes the facts, so the no-model answer still shows them. The system prompt tells the model to use and cite the facts and not to work out figures itself.
+- Number check unchanged: a number the model invents is in no source and fails, is retried once, then the template is shown. Tested with an invented count (13) and an invented total (999.99).
+- Limit of the number check: it is a membership test, so a made-up number that happens to equal some digit group in the cited text passes (for example `7` passes when a source holds a date in July). The tests use numbers that are in no source.
+- Fixture change: the invented spares rows now carry a `Source row` JSON blob like the real loader (needed to compute spares facts).
+- `tests/test_facts.py`: 20 tests. Suite: 367 passing.
+- Live data (counts only): "how many work orders did CNC-02 have in 2025" gives 59 work orders, 55,463.76 SGD, 303.9 hours; incidents in 2025 give 34 unique events from 58 source versions; spares give 3 below minimum; CNC-02 sensor months give 7 months with the highest mean vibration in 2026-06.

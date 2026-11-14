@@ -27,6 +27,8 @@ def _short(value: str, limit: int) -> str:
 
 
 def _facts(source: dict) -> str:
+    if source.get("source_type") == "computed_facts":
+        return str(source["text"]).strip()
     record = record_of(source)
     parts = []
     for key, value in record.items():
@@ -49,7 +51,8 @@ def build_template_answer(sources: list[dict], question: str = "") -> str:
         return ("I could not find evidence to answer that question. "
                 "Specify an asset tag, report ID or SOP topic and I will look again.")
     lines = ["Here is what the retrieved records show (no AI wording was generated):", ""]
-    for source in usable[:MAX_ITEMS]:
+    computed = [source for source in usable if source.get("source_type") == "computed_facts"]
+    for source in [s for s in usable if s.get("source_type") != "computed_facts"][:MAX_ITEMS] + computed:
         title = re.sub(r"\s+", " ", str(source.get("title") or "")).strip()
         label = " (unverified OCR)" if "UNVERIFIED" in str(source.get("text") or "")[:40] else ""
         facts = _facts(source)

@@ -15,9 +15,10 @@ import time
 from jm_rag import conflicts as conflict_rules
 from jm_rag import observability, validator
 from jm_rag.dates import partial_work_order_date, resolve_partial_work_order_date
+from jm_rag.facts import facts_source
 from jm_rag.guardrails import input_guard, names, output_guard
 from jm_rag.guardrails.sanitize import sanitize_sources, sanitize_text
-from jm_rag.intents import is_history_table_request, is_work_order_table_request
+from jm_rag.intents import is_aggregate_question, is_history_table_request, is_work_order_table_request
 from jm_rag.notes import mandatory_notes
 from jm_rag.outcome import decide_outcome
 from jm_rag.prompt import load_system_prompt, serialize_evidence
@@ -189,9 +190,11 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
             retrieval_question = resolve_partial_work_order_date(previous, int(question.strip()))
     elif not any(character.isdigit() for character in question):
         retrieval_question = (previous + " " + question).strip()
-    table_request = is_history_table_request(retrieval_question)
+    aggregate = is_aggregate_question(question)
+    table_request = is_history_table_request(retrieval_question) and not aggregate
     combined = bool(re.search(r"\b(?:incident|near.miss)\b", retrieval_question, re.I)
-                    and re.search(r"\b(?:service|servicing|work.order|maintenance)\b", retrieval_question, re.I))
+                    and re.search(r"\b(?:service|servicing|work.order|maintenance)\b", retrieval_question, re.I)
+                    and not aggregate)
     sources = sanitize_sources(retrieve(retrieval_question, all_sources,
                                         limit=50 if combined else 10 if table_request else 5))
     trace.append({"step": "retrieve", "sources": len(sources), "table_request": table_request})
@@ -214,8 +217,13 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
     elif table_request:
         body, path = format_incident_table(sources), "table"
     else:
-        extra = sanitize_sources(conflict_rules.related_sources(retrieval_question, sources, all_sources))
+        extra = conflict_rules.related_sources(retrieval_question, sources, all_sources)
+        computed = facts_source(retrieval_question, all_sources)
+        if computed:
+            extra.append(computed)
+        extra = sanitize_sources(extra)
         sources = sources + [{**source, "id": f"S{len(sources) + position + 1}"} for position, source in enumerate(extra)]
+        trace.append({"step": "facts", "computed": bool(computed)})
         body, note = _model_answer(question, history, sources, sanitize_text(str(warnings)), client, model,
                                    usage, trace, errors, max_tokens)
         path = "template" if note else "model"

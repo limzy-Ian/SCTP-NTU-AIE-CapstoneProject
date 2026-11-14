@@ -110,12 +110,14 @@ def build_fixture_sources() -> list[dict]:
                            "data/docs/sops/SOP-FAKE-01.txt lines 1-3", source_type="document"))
 
     # Spares rows (2): one specific machine, one with ALL (unresolved)
-    for part, machine, desc, qty, lead in (("PN-FAKE-100", "TST-01", "Drive belt", 4, "6-8 weeks!!"),
-                                           ("PN-FAKE-200", "ALL", "General grease", 12, "2 weeks")):
+    for part, machine, desc, qty, lead, minimum, cost in (("PN-FAKE-100", "TST-01", "Drive belt", 4, "6-8 weeks!!", 2, 35.5),
+                                                          ("PN-FAKE-200", "ALL", "General grease", 12, "2 weeks", 15, 8.0)):
+        row = {"Part No": part, "Description": desc, "For Machine": machine, "Qty": qty, "Min Qty": minimum,
+               "Unit Cost": cost, "Lead Time": lead}
         sources.append(_source(f"spares_fake.xlsx / {part}",
                                f"Workbook row; verify current stock with the storeman. Critical spare "
                                f"part inventory. Part number: {part}. Description: {desc}. "
-                               f"Machine: {machine}. Quantity in stock: {qty}. Lead time: {lead}.",
+                               f"Machine: {machine}. Quantity in stock: {qty}. Lead time: {lead}. Source row: {json.dumps(row)}",
                                f"spares_fake.xlsx / Sheet1 row {2 if machine != 'ALL' else 3}",
                                asset_tag=machine, source_type="tabular"))
 

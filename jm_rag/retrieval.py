@@ -46,9 +46,11 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
     preferred_types = set()
     if re.search(r"\b(?:spares?|stock|part number|inventory|lead time|minimum quantity)\b", question, re.I):
         preferred_types.add("tabular")
-    sensor_intent = bool(re.search(r"\b(?:sensor|vibration|temperature|readings?|trend|time.series|gaps?)\b", question, re.I))
+    # sensor words match by stem, so "vibrating", "vibrates" and "temperatures" count
+    sensor_intent = bool(re.search(r"\b(?:sensors?|vibrat\w*|temperatures?|readings?|trend\w*|time.series|gaps?)\b", question, re.I))
     sensor_trend_intent = bool(sensor_intent and re.search(
-        r"\b(?:trend|increase|increasing|rise|rising|decrease|decreasing|fall|falling|change|month.over.month)\b",
+        r"\b(?:trend\w*|increas\w*|ris(?:e|es|ing)|decreas\w*|fall\w*|falling|chang\w*|month.over.month|"
+        r"more|less|higher|lower|worse|climb\w*|drift\w*)\b",
         question, re.I,
     ))
     if sensor_intent:
@@ -68,7 +70,10 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
     recent_work_orders = bool(work_order_intent and (
         is_work_order_table_request(question) or re.search(r"\b(?:recent|latest|last)\b", question, re.I)
     ))
-    if not sensor_intent and re.search(r"\b(?:manufacturer|model|serial|nameplate|lubricant|grease|capacity|electrical|power|weight)\b", question, re.I):
+    lube_intent = bool(re.search(r"\b(?:lubricants?|lubricat\w*|lubes?|oils?|grease|greasing|viscosity|vg\s?\d+)\b",
+                                 question, re.I))
+    if not sensor_intent and (lube_intent or re.search(
+            r"\b(?:manufacturer|model|serial|nameplate|capacity|electrical|power|weight)\b", question, re.I)):
         preferred_types.update({"nameplate", "processed_nameplate", "processed_ocr_text"})
     if re.search(r"\b(?:sop|procedure|permit|loto|lockout|confined.space|operator|lift(?:ing)?)\b", question, re.I):
         preferred_types.add("document")
@@ -115,7 +120,8 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
     return Plan(tags=tags, candidates=candidates, work_order_intent=work_order_intent, incident_intent=incident_intent,
                 combined_history_intent=combined_history_intent, capability_intent=capability_intent,
                 sensor_intent=sensor_intent, sensor_trend_intent=sensor_trend_intent, preferred_types=preferred_types,
-                recent_work_orders=recent_work_orders, date_window=date_window, report_keys=report_keys)
+                recent_work_orders=recent_work_orders, date_window=date_window, report_keys=report_keys,
+                lube_intent=lube_intent)
 
 
 def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
@@ -134,6 +140,10 @@ def retrieve(question: str, sources: list[dict], limit: int = 5) -> list[dict]:
         search_question = ASSET_PATTERN.sub(" ", question) if tags else question
         if re.search(r"\b(?:servic(?:e|ing)|maintenance|pm)\b", question, re.I):
             search_question += " work order maintenance service servicing preventive PM"
+        if plan.sensor_intent:
+            search_question += " sensor vibration temperature readings"
+        if plan.lube_intent:
+            search_question += " lubricant grease oil"
         if sensor_trend_intent:
             search_question += " monthly mean vibration RMS normalized temperature trend increase rise decrease change month-over-month"
         if incident_intent:

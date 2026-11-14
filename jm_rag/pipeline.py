@@ -229,7 +229,7 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         path = "template" if note else "model"
     trace.append({"step": "path", "path": path})
 
-    found = conflict_rules.find_conflicts(sources, question)
+    found = conflict_rules.find_conflicts(sources, question, all_sources)
     notes = mandatory_notes(flags, question, sources)
     notes += [item["text"] for item in found]
     if note:

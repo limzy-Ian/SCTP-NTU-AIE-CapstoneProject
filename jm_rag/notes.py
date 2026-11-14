@@ -19,6 +19,7 @@ MISSING_DOCUMENT_NOTE = ("No 5-Why, root-cause or investigation document is in t
 SCHEDULE_NOTE = ("The data holds past and open work orders only, so I cannot give the next service or due date.")
 INFERENCE_NOTE = ("The data does not record causes, alarm limits or failure history, so this describes what the "
                   "records show; it does not predict a failure or declare a machine safe.")
+CAUSE_NOTE = "The records show what changed, not why. The cause is not in the data, so I cannot give one."
 SEVERITY_NOTE = ("Incident severity changed scale on 1 Jul 2025: before then 1 is worst, from then 5 is worst. "
                  "A plain severity number is not comparable across that date.")
 OCR_NOTE = ("Some values come from OCR that is not human-verified; those are labelled unverified and may be wrong.")
@@ -62,6 +63,8 @@ def mandatory_notes(flags: dict, question: str, sources: list[dict]) -> list[str
     if flags.get("asks_schedule"):
         notes.append(SCHEDULE_NOTE)
     if flags.get("inference_request"):
+        if re.search(r"\bwhy\b|\bcaus(?:e|es|ed|ing)\b", question or "", re.I):
+            notes.append(CAUSE_NOTE)
         notes.append(INFERENCE_NOTE)
     if _SEVERITY_IN_QUESTION.search(question or "") and _severity_spans_flip(sources):
         notes.append(SEVERITY_NOTE)

@@ -73,9 +73,9 @@ def _field_asked(field: str, question: str) -> bool:
     return bool(_GENERIC_PLATE.search(question) or re.search(_FIELD_WORDS.get(field, r"$^"), question, re.I))
 
 
-def find_conflicts(sources: list[dict], question: str | None = None) -> list[dict]:
+def find_conflicts(sources: list[dict], question: str | None = None, all_sources: list[dict] | None = None) -> list[dict]:
     """All conflicts in the evidence. With a question, only those about what was asked are kept."""
-    found = (_plate_vs_cmms_model(sources) + _plate_vs_processed(sources) + _lubricant_vs_all(sources)
+    found = (_plate_vs_cmms_model(sources) + _plate_vs_processed(sources) + _lubricant_vs_all(sources, all_sources)
              + _sop_crane_vs_plate(sources) + _incident_versions(sources))
     if question is None:
         return found
@@ -133,7 +133,42 @@ def _all_spare_description(source: dict) -> str:
     return match.group(1).strip() if match else ""
 
 
-def _lubricant_vs_all(sources: list[dict]) -> list[dict]:
+_GRADE = re.compile(r"\bv?g\s?(\d{2,3})\b", re.I)
+
+
+def _grade(text: str) -> str | None:
+    """ISO viscosity grade (VG32, G32, VG 68) written in the text, or None when OCR left none readable."""
+    match = _GRADE.search(str(text))
+    return match.group(1) if match else None
+
+
+def _lubricant_agrees(plate_value: str, spare_text: str) -> bool:
+    plate_grade, spare_grade = _grade(plate_value), _grade(spare_text)
+    if plate_grade and spare_grade:
+        return plate_grade == spare_grade
+    return loose_match(spare_text, plate_value)
+
+
+def _all_not_per_machine(spare: dict, description: str, plates: dict, all_sources: list[dict]) -> list[dict]:
+    """The `ALL` entry matches this machine's plate, but it is not a per-machine fact if other plates differ."""
+    spare_grade = _grade(spare.get("text") or "")
+    if not spare_grade:
+        return []
+    shown = {str(source.get("asset_tag") or "").upper() for source in plates.values()}
+    others = sorted({str(source["asset_tag"]).upper() for source in all_sources
+                     if source.get("source_type") in _PLATE_TYPES and source.get("asset_tag")
+                     and str(source["asset_tag"]).upper() not in shown
+                     and _grade(record_of(source).get("lubricant") or "") not in (None, spare_grade)})
+    if not others:
+        return []
+    return [_conflict(
+        "lubricant_vs_spares_all",
+        f"Conflict on lubricant: the spares list has one entry for `ALL` machines ({description or 'see source'}) {_ref(spare)}. "
+        f"It matches this nameplate, but the nameplates of {', '.join(others[:6])} read a different viscosity grade, so "
+        "`ALL` is not a per-machine fact. `ALL` is left unresolved and is not expanded to machines; use the machine's own plate.")]
+
+
+def _lubricant_vs_all(sources: list[dict], all_sources: list[dict] | None = None) -> list[dict]:
     spares = [source for source in sources if source.get("source_type") == "tabular"
               and str(source.get("asset_tag") or "").upper() == "ALL"
               and re.search(r"\b(oil|grease|lubric)", str(source.get("text") or ""), re.I)]
@@ -147,10 +182,10 @@ def _lubricant_vs_all(sources: list[dict]) -> list[dict]:
         return []
     spare = spares[0]
     description = _all_spare_description(spare)
-    unmatched = {value: source for value, source in plates.items()
-                 if not loose_match(str(spare.get("text") or ""), value)}
+    spare_text = str(spare.get("text") or "")
+    unmatched = {value: source for value, source in plates.items() if not _lubricant_agrees(value, spare_text)}
     if not unmatched:
-        return []
+        return _all_not_per_machine(spare, description, plates, all_sources or [])
     values = ", ".join(sorted(unmatched))
     extra = " Different nameplates list different lubricants, so one oil does not fit every machine." if len(plates) > 1 else ""
     return [_conflict(

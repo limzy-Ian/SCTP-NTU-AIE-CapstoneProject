@@ -71,7 +71,7 @@ The reference project lives at `C:\Users\IT_en\Desktop\RAG_Capstone\team7_jurong
 - `app.py` (about 490 lines): Streamlit entry with three tabs (Assistant, OCR Review, Sensor Trends). The chat flow calls `input_refusal`, then `retrieve`, then the OpenAI-compatible client, then `validate_answer`.
 - `scripts/maintenance_rag.py` (about 980 lines): system prompt, date parsing, table formatting, source loading from MySQL, SOP text, spares workbook, processed OCR and audits, `retrieve()` (TF-IDF plus many intent regexes), `validate_answer()`.
 - `scripts/`: `chat_history.py`, `ocr_review.py`, `nameplate_ocr_import.py`, `ingest_incident_reports.py`, `compare_ocr.py`, `sensor_csv_to_mysql.py`.
-- `tests/`: `test_maintenance_rag.py`, `test_ocr_comparison.py`, `test_source_loading.py` (about 47 test methods in total). Run with `unittest`.
+- `tests/`: `test_maintenance_rag.py`, `test_ocr_comparison.py`, `test_source_loading.py` (43 tests in total at the baseline; all pass). Run with `unittest`.
 - Answers cite sources as `[S1]`, `[S2]`, … and the UI shows the evidence.
 - Today's guard is minimal: `input_refusal()` blocks "bypass safety" phrasing and a few private-data words. `validate_answer()` checks that citations exist and that no NRIC or email appears. Names are kept out mainly by the prompt and by what the SQL selects.
 

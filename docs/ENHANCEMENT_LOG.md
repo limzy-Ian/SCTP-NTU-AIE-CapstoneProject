@@ -67,3 +67,29 @@ Date: 14 Nov 2026.
 ### Notes for later phases
 - Phase 3: treat the `reviewer` field pulled from `ocr_review_decisions` as personal data (human instruction, 14 Nov 2026). Keep it out of evidence text, the evidence panel and answers. The nameplate and incident OCR queries in `_load_mysql_sources` select `d.reviewer`, and `effective_record` receives the row. Add a test with a fixture reviewer value.
 - `.env.example` is clean again in the working tree (the key-like edit is gone).
+
+## Phase 2: Refactor into `jm_rag/`
+
+Date: 14 Nov 2026.
+
+### What changed
+- Moved the code in `scripts/maintenance_rag.py` into the `jm_rag` package, verbatim, in eight steps (config, prompt, intents, dates, tables, input guard and validator with common helpers and sensors, source loaders, retrieval and `load_sources`). The full suite was run after every step and stayed at 153 passing.
+- `scripts/maintenance_rag.py` is now a 58-line deprecated shim that re-exports every public name the old module had, plus the private helpers (`_source`, `_query_rows`, `_query_one`, `_load_text_documents`, `_load_mysql_sources`, `_load_processed_audits`). A name-parity check against the previous version found only stdlib and third-party imports missing (`re`, `json`, `date`, and so on).
+- No test file was edited. No `ODD:` behaviour was changed. `input_refusal` and `validate_answer` are moved unchanged.
+- `jm_rag/config.py` holds `ROOT`, `ASSET_PATTERN`, `IMAGE_EXTENSIONS`, `PROCESSED_AUDITS`, `MONTH_NUMBERS` (equality with the old dict checked) and a new `DATA_END = 2026-06-30`, which no code reads yet.
+
+### Deviations from the plan's layout
+1. `intents.py` (the three question-intent helpers), `common.py` (`_source`), `sensors.py`, `sources_mysql.py`, `sources_files.py` and `sources_ocr.py` are extra. The plan puts all loaders in one `sources.py`, which would have been about 500 lines. `serialize_evidence` lives in `prompt.py`.
+2. `input_refusal` is in `guardrails/input_guard.py` and `validate_answer` is in `validator.py` already, unchanged, so Phase 3 and 4 extend them in place. `guardrails/patterns.py`, `names.py`, `output_guard.py`, `template.py`, `pipeline.py` and `observability.py` do not exist yet.
+3. Two existing tests patch `scripts.maintenance_rag.ROOT` and `scripts.maintenance_rag.open_connection`. Since the code that reads those names moved, the shim swaps its class for a small `ModuleType` subclass that forwards assignments of those two names to `jm_rag.config` and `jm_rag.sources_mysql`. The moved modules read `config.ROOT` at call time (the only edit to moved code: bare `ROOT` became `config.ROOT`). This lets the tests stay unedited. The tests should be pointed at `jm_rag` when the shim is removed.
+
+### Results
+- Tests: 153, all pass (Phase 0: 48 including fixtures, Phase 1: 105).
+- pyflakes (run from a temp folder, not added to the repo): no undefined names. One unused local in `retrieval.py`, `exact_work_order_date`, existed before the move. Left alone; delete it once a test shows it unused.
+- `streamlit run app.py` (headless, port 8599): server starts and `/_stcore/health` returns `ok`. `AppTest.from_file("app.py").run()` against live MySQL: 0 exceptions, tabs Assistant, OCR Review, Sensor Trends.
+
+### Module sizes (lines)
+config 21, prompt 57, intents 22, dates 116, tables 96, common 6, sensors 60, guardrails/input_guard 18, validator 18, sources 50, sources_files 77, sources_ocr 146, sources_mysql 218, retrieval 168, shim 58. No module is over 300 lines.
+
+### Open issues
+- `KIRO_ENHANCEMENT_PLAN.md` on disk has no Phase 4 fix list for the ODD findings. The only change since the last commit is the baseline test count ("43 tests"). The list may be unsaved in an editor.

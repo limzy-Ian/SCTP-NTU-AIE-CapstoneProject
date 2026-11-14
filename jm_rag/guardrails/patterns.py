@@ -61,7 +61,7 @@ NAME_REQUEST = [
     r"\bemp\s?-?\d{3}\b.{0,30}\b(everything|details|information|name|who)\b",
     r"\bwho (was|were|got|is|are)\b.{0,12}\b(injured|hurt|involved|affected|harmed)\b",
     r"\bwho (did|does|caused|causes|is responsible|was responsible|is to blame|was to blame|is at fault|was at fault)\b.{0,40}\b(incident|injur|accident|near.?miss|ir-\d{4}-\d+)",
-    r"\b(list|show|give|tell|provide|display)\b.{0,15}\b(all |the |every )?(employees|workers|staff|technicians|personnel|operators)\b",
+    r"\b(list|show|give|tell|provide|display)\b.{0,15}\b(all |the |every )?(employees|workers|staff|technicians|personnel|operators)\b(?!['’]|\s+(?:trade|shift|count|breakdown|by\b|per\b))",
     r"\bidenti(fy|ty of)\b.{0,30}\b(the )?(injured|worker|employee|technician|operator|victim|person)",
     r"\bwhat('s| is) (his|her|their) name\b",
     r"\bwhich (employee|worker|technician|operator|person|staff) (was|were|got|is|are)\b.{0,20}\b(injured|hurt|involved)",
@@ -82,6 +82,19 @@ PERSON_RANKING = [
     rf"\bcompare\b.{{0,25}}\b{_PEOPLE}\b",
 ]
 
+# Questions about one employee code's incidents or injuries, or about which technicians were involved in
+# an incident. Technician codes on work orders are allowed, and so are aggregate counts, so every pattern
+# needs an incident word (incident, injury, near-miss, accident, lost days, severity).
+_INCIDENT_WORD = (r"(incidents?|injur\w*|near.?miss(?:es)?|accidents?|hurt|lost.?days?|severity|ir-\d{4}-\d+)")
+_TECH = r"(technicians?|workers?|operators?|staff|employees?|personnel|fitters?|engineers?|electricians?|people|persons?)"
+PERSON_INCIDENTS = [
+    rf"\bemp\s?-?\d{{2,}}\b.{{0,60}}\b{_INCIDENT_WORD}\b",
+    rf"\b{_INCIDENT_WORD}\b.{{0,60}}\bemp\s?-?\d{{2,}}\b",
+    rf"\b(which|what|list|show|give|tell)\b.{{0,25}}\b{_TECH}\b.{{0,40}}\b(involved|present|on site|attended|responsible|at fault|there|reported|witness\w*)\b",
+    rf"\b{_TECH}\s+(codes?|ids?)\b.{{0,40}}\b{_INCIDENT_WORD}\b",
+    rf"\b{_INCIDENT_WORD}\b.{{0,40}}\b{_TECH}\s+(codes?|ids?)\b",
+    rf"\b(involved|present|attended|witness\w*)\b.{{0,30}}\b{_INCIDENT_WORD}\b.{{0,30}}\b(codes?|ids?|technicians?|who)\b",
+]
 WRITE_INTENT = [
     rf"^\s*(please\s+|kindly\s+|now\s+|just\s+)?{_VERBS}\b.{{0,60}}\b{_DATA_NOUNS}\b",
     rf"\b(can|could|would|will) you (please )?{_VERBS}\b.{{0,60}}\b{_DATA_NOUNS}\b",
@@ -205,6 +218,10 @@ MESSAGES = {
     "PERSON_RANKING": (
         "I do not rank or compare individual people. Injury data about a person is sensitive and I only report it in aggregate. "
         "I can show incidents by machine, year, shift or severity instead."
+    ),
+    "PERSON_INCIDENTS": (
+        "I do not give incident or injury details about one person, or say which technicians were involved in an incident. "
+        "Technician codes on work orders and aggregate counts by machine, year, shift or severity are fine, so I can give those instead."
     ),
     "WRITE_INTENT": (
         "I am read-only. I cannot change, add or delete any record. "

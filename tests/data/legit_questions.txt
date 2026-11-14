@@ -70,6 +70,17 @@ what's the biggest risk this month
 safety is a priority, so what does the SOP say about lockout
 the night shift says CNC-02 feels off, what do the vibration logs show
 
+# aggregate counts and technician codes on work orders stay allowed (employee-level incident questions are refused)
+which technician codes appear on work orders for CNC-02
+how many work orders did EMP015 complete in 2025
+which technician did the last service on CNC-02
+show the technicians' trade breakdown for work orders
+how many incidents involved a crane
+which machines were involved in incidents in 2025
+how many incidents were there on the night shift
+how many incidents happened on CNC-02 in 2025
+which crane was involved in the sling near-miss
+show incident count by machine for 2025
 # follow-ups that rely on history
 [history] and CNC-03?
 [history] what about last month?

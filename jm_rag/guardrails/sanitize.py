@@ -11,9 +11,19 @@ from __future__ import annotations
 import logging
 import re
 
-from jm_rag.guardrails import names
+from jm_rag.guardrails import names, patterns
 
 LOGGER = logging.getLogger("jm_rag.guardrails")
+
+# free text that reads like an instruction to the assistant (prompt injection carried in a record)
+_INSTRUCTION_LIKE = [re.compile(pattern) for pattern in patterns.INJECTION]
+WITHHELD_TEXT = "[free text withheld: it reads like an instruction]"
+
+
+def looks_like_instruction(text) -> bool:
+    """True when record text matches the injection phrasings. Such text is data, never shown as an instruction."""
+    return isinstance(text, str) and any(regex.search(text.lower()) for regex in _INSTRUCTION_LIKE)
+
 
 # record keys that identify a person; dropped, not masked
 PERSONAL_KEYS = {"reviewer", "reviewed_by", "reviewer_name", "emp_name", "employee_name",

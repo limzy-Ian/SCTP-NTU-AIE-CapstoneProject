@@ -128,3 +128,45 @@ Date: 14 Nov 2026. No employee name appears in this log, the tests, the terminal
 - The term list only knows people in `employees` (plus anything in `data/guard/extra_terms.txt`). People who appear only in documents, for example a sender or signatory in `data/docs/sops/0000_gm_brief_email.txt`, are not caught by it. I did not print that file. Add such names (one per line, untracked file) to `data/guard/extra_terms.txt` and rerun the build script.
 - First names alone, initials, and misspelt names are not matched. Per-person questions are caught by pattern, not by name.
 - `exact_work_order_date` in `retrieval.py` is still an unused local.
+
+## Phase 3 follow-up: employee-level incident questions (human decision, 14 Nov 2026)
+
+- New refusal class `PERSON_INCIDENTS`, checked after `PERSON_RANKING` and before `WRITE_INTENT`. It refuses questions about one employee code's incidents or injuries ("How many incidents did EMP015 have?") and any question asking which technicians were involved in, present at or responsible for an incident. Every pattern needs an incident word, so technician codes on work orders and aggregate counts stay allowed. 11 phrasings are tested; the message offers aggregate counts and says work-order codes are fine.
+- Legitimate counter-examples added to `tests/data/legit_questions.txt` (now 72): "who did work order 11529", "how many work orders did EMP015 complete in 2025", "which technician codes appear on work orders for CNC-02", "how many incidents involved a crane", "which machines were involved in incidents in 2025", and others.
+- False positive found and fixed on the way: "show the technicians' trade breakdown for work orders" was refused as a name request (a reference pattern for "show the technicians"). The pattern now ignores a possessive and "trade/shift/count/breakdown/by/per" after the noun.
+- The test that listed "How many incidents did EMP015 have?" and "Which technicians were involved ..." as questions passing the guard on purpose was changed to match the decision. No other assertion was weakened.
+
+## Phase 4a: validation, outcomes, notes, conflicts, fallbacks, usage
+
+Date: 14 Nov 2026. The "Behaviour fixes found in Phase 1" list is Phase 4b and is untouched; every `ODD:` test is unchanged.
+
+### What changed
+- `jm_rag/validator.py`: `post_check(answer, sources, question)` returns all problems in one list. It checks that every `[S#]` exists, that a factual answer has a citation (an answer that only says it could not find or cannot give something needs none), that every number and every identifier (machine tags, part numbers, `IR-YYYY-NNN`, SOP IDs, codes such as `GA30`) appears in the cited sources or the question, and that a quotation of four or more words appears word for word in a cited source. `4.0` equals `4`, `1,800` equals `1800.0`, `0` is always allowed, list numbering and `[S#]` markers are ignored, and digits inside a source's codes count as evidence (`906` is allowed beside `IR-2025-906`). `validate_answer` is kept unchanged for old callers.
+- `jm_rag/pipeline.py`: `answer_question(question, history, corpus, client, *, model=None)` returns the plan's response contract (answer, outcome, refusal_class, sources, cited_ids, notes, flags, usage, trace, errors). Flow: input guard, partial-date and ambiguous-alias clarification, retrieval, deterministic paths (history tables, no evidence), model answer, post-check, one retry with the error list, template fallback, notes and conflicts, outcome, output guard. `app.py` is not yet switched to it (Phase 6); the pipeline ports the app's follow-up behaviour (year-only answer to a partial date, previous question carried into a follow-up without digits).
+- `jm_rag/outcome.py`: rules in the plan's order (refuse, clarify, abstain, conflict, error, answer).
+- `jm_rag/notes.py`: mandatory notes from code: future date (data ends 30 Jun 2026), missing 5-Why/root-cause document, no schedule, inference, severity scale change (only when the question is about severity and the evidence spans 1 Jul 2025), and OCR caution. Notes are appended to the answer under "Notes:" and returned in `notes`.
+- `jm_rag/conflicts.py`: nameplate OCR model vs CMMS model, MySQL staging vs processed OCR, nameplate lubricant vs the spares entry for `ALL` (never expanded), SOP crane load vs nameplate (including a plate with no tonnage, CRN-01), and incident versions across CMMS, OCR staging and processed OCR (agreeing versions are a note, not a conflict). Each states which source is trusted and why (SOP, then nameplate, then CMMS free text; the CMMS `safety_incidents` record for incidents) and shows both sides.
+- `jm_rag/template.py`: deterministic cited list of the facts (up to 5 sources, values copied from records). Always passes `post_check`. Instruction-like free text is replaced by "[free text withheld: it reads like an instruction]".
+- `jm_rag/observability.py`: `api_cost_rates` and `estimate_api_cost` moved here (`app.py` imports them, so `from app import estimate_api_cost` still works), plus `new_usage` and `record_call`.
+- `tests/mock_client.py` (`MockClient`, `ForbiddenClient`), `tests/test_validator.py` (81 tests), `tests/test_pipeline.py` (26 tests).
+
+### Results
+- Full suite: 347 tests, all pass (236 before; +11 in `test_guardrails` for the new class, +81, +26 here). Counts per file: guardrails 87, validator 81, pipeline 26, characterization 105, maintenance_rag 13, source_loading 23, ocr_comparison 7, fixtures 5.
+- Example cases (28, each asserting outcome, model calls and notes) run through `answer_question` with the mock client: see the table in the Phase 4a report. All behave as listed there.
+- Live data (mock-free, no model, 1824 sources): the template answer passes `post_check` for all 17 probe questions; CRN-01 max-load and CNC-03 lubricant give `conflict` with sensible notes; "work orders for the CNC lathe" gives `clarify` (the alias maps to CNC-01 and CNC-02).
+
+### Decisions and interpretations
+1. Error vs abstain: the plan lists `error` after `conflict`. Code treats "no evidence and a failed source" as `error` ahead of `abstain`, because "no records" cannot be told from "could not check". Evidence plus a failed source keeps the normal outcome and adds a "I could not check ..." note. Only the failed source's label is shown, never the driver's error text.
+2. A history table request with only rows of the wrong kind (for example an SOP chunk) now counts as no evidence, instead of printing "I couldn't find matching service records". This is what lets a dead MySQL give an honest `error`.
+3. Conflicts are scoped to the question (a model question keeps the model conflict, a lubricant question keeps the lubricant conflict, and so on). Without scoping, OCR noise on an unrelated field flipped many answers to `conflict`.
+4. OCR is noisy, so model and lubricant comparisons use the identifying part: tokens with digits (QT-250, VG68) must appear; with no digits any similar word agrees. Numbers compare as numbers (`22.00` equals `22.0`).
+5. `related_sources` adds the other side of a conflict to the evidence: the `ALL` spares row beside a nameplate for lubricant questions, and the crane nameplate and SOP for load questions. Retrieval ranks by text similarity and left one side out.
+6. A model call that raises is counted (calls +1, zero tokens, `error` on the step); its cost is unknown, so `cost_usd` only sums known costs.
+7. Number strictness follows the plan literally. A model answer that states a count it worked out itself ("3 work orders") has a number that is in no source and will be rejected, retried and then replaced by the template. History tables are built by code and are not affected. This should be watched in the Phase 5 e2e run; a human decision may be needed (for example allow counts of cited items).
+8. New module files beyond the plan layout: `conflicts.py`, `notes.py`, `outcome.py`. `pipeline.py` is 235 lines; all modules are under 300.
+
+### Findings for Phase 4b or later (no change made)
+- "What oil does CNC-02 take?" (the client brief's own example) does not retrieve the nameplate: the nameplate keyword list has "lubricant" and "grease" but not "oil", so evidence is unrelated incidents and the outcome is `answer` without the lubricant conflict the reference expects. Add `oil` to the nameplate intent in retrieval.
+- "Why is CNC-02 vibrating more?" retrieves nothing, because the sensor intent matches "vibration" but not "vibrating". The inference question should still show the sensor facts, with the gap stated. Add `vibrat\w*`.
+- "service history and incidents table for CNC-02 in 2025" abstains with no evidence (fix list item 3).
+- `exact_work_order_date` in `retrieval.py` is still an unused local.

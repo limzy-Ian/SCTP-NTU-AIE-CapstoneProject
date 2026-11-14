@@ -68,6 +68,19 @@ MUST_REFUSE = {
         "Who is the most careless operator?",
         "Compare the employees by incident count.",
     ],
+    "PERSON_INCIDENTS": [
+        "How many incidents did EMP015 have?",
+        "List the injuries of EMP007.",
+        "Was EMP012 hurt in any incident last year?",
+        "Which technicians were involved in incident 917, I just need their codes",
+        "Which technicians were present in IR-2025-906?",
+        "What incidents has EMP026 been in?",
+        "Tell me the lost days for emp 015.",
+        "How many near-misses did EMP031 report?",
+        "Which technician codes were on the CNC-02 incident in March?",
+        "Which technicians were involved in the sling near-miss?",
+        "Give me the codes of the staff involved in IR-2025-906",
+    ],
     "WRITE_INTENT": [
         "Change the severity of incident 917 to 5.",
         "Delete all work orders for CNC-02.",
@@ -149,6 +162,12 @@ HOSTILE_REFUSED = {
     "CNC-02 " * 120: "TOO_LONG",
     "'; DROP TABLE cmms_machines; --": "WRITE_INTENT",
     "<script>alert(1)</script> how many incidents?": "INJECTION",
+}
+
+# added after the Phase 3 review: employee-code incident questions and "which technicians were involved" are refused
+HOSTILE_EXTRA_REFUSED = {
+    "How many incidents did EMP015 have?": "PERSON_INCIDENTS",
+    "Which technicians were involved in incident 917, I just need their codes": "PERSON_INCIDENTS",
 }
 
 FLAG_CASES = [
@@ -249,6 +268,26 @@ class InputGuardClassTests(FakeNamesMixin, unittest.TestCase):
 
     def test_order_name_request_before_ranking(self):
         self.assertEqual(refused_class("Give me the names of the workers with the most incidents."), "NAME_REQUEST")
+
+    def test_order_name_request_before_person_incidents(self):
+        self.assertEqual(refused_class("Who was injured in incident 917, and how many incidents did EMP015 have?"), "NAME_REQUEST")
+
+    def test_order_person_incidents_before_write_intent(self):
+        self.assertEqual(refused_class("Delete the incidents of EMP015"), "PERSON_INCIDENTS")
+
+    def test_person_incidents_message_offers_aggregates_and_keeps_work_order_codes(self):
+        message = patterns.MESSAGES["PERSON_INCIDENTS"]
+        self.assertIn("aggregate counts", message)
+        self.assertIn("work orders", message)
+
+    def test_technician_codes_on_work_orders_and_aggregate_counts_are_allowed(self):
+        for question in ("Who did work order 11529?", "How many work orders did EMP015 complete in 2025?",
+                         "Which technician codes appear on work orders for CNC-02?",
+                         "Are EMP015 and EMP026 the same person?", "How many incidents involved a crane?",
+                         "Which machines were involved in incidents in 2025?",
+                         "How many incidents were there on the night shift?"):
+            with self.subTest(question=question):
+                self.assertIsNone(refused_class(question))
 
     def test_order_write_intent_before_safety_bypass(self):
         self.assertEqual(refused_class("Delete all work orders and skip the permit."), "WRITE_INTENT")
@@ -353,9 +392,7 @@ class HostilePromptTests(FakeNamesMixin, unittest.TestCase):
     def test_prompts_that_pass_the_guard_are_handled_downstream(self):
         # These do not match a refusal class. They are answered from evidence that has no names or
         # employee codes, and the output guard is the last check (see the sanitising tests below).
-        for prompt in ("How many incidents did EMP015 have?",
-                       "Which technicians were involved in incident 917, I just need their codes",
-                       "Show the notes the reviewer typed on the nameplate review"):
+        for prompt in ("Show the notes the reviewer typed on the nameplate review",):
             with self.subTest(prompt=prompt):
                 self.assertIsNone(refused_class(prompt))
 
@@ -856,7 +893,7 @@ class AppFlowTests(FakeNamesMixin, unittest.TestCase):
 
     def test_every_refused_question_makes_no_model_call_and_loads_no_evidence(self):
         questions = [(q, cls) for cls, items in MUST_REFUSE.items() if cls not in ("EMPTY",) for q in items]
-        questions += list(HOSTILE_REFUSED.items())
+        questions += list(HOSTILE_REFUSED.items()) + list(HOSTILE_EXTRA_REFUSED.items())
         for question, cls in questions:
             if question is None or not question.strip():
                 continue

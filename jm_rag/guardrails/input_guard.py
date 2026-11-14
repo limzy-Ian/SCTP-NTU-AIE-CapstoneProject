@@ -2,7 +2,7 @@
 
 ``check()`` is a pure function returning ``{verdict, class, message, flags, question}``.
 Classes are tried in a fixed order, the first match wins:
-INJECTION, NAME_REQUEST, PERSON_RANKING, WRITE_INTENT, SAFETY_BYPASS, PRIVATE_DATA,
+INJECTION, NAME_REQUEST, PERSON_RANKING, PERSON_INCIDENTS, WRITE_INTENT, SAFETY_BYPASS, PRIVATE_DATA,
 then (after those) a full employee name in the question, creative requests, and questions
 with no domain word and no earlier turn (OFF_TOPIC). EMPTY and TOO_LONG are checked first.
 Flags (inference_request, needs_future_date, asks_missing_document, asks_schedule) are set
@@ -15,7 +15,7 @@ import re
 from jm_rag import config
 from jm_rag.guardrails import names, patterns
 
-_ORDER = ("INJECTION", "NAME_REQUEST", "PERSON_RANKING", "WRITE_INTENT")
+_ORDER = ("INJECTION", "NAME_REQUEST", "PERSON_RANKING", "PERSON_INCIDENTS", "WRITE_INTENT")
 _COMPILED = {cls: [re.compile(p) for p in getattr(patterns, cls)] for cls in _ORDER}
 _SAFETY = [re.compile(p) for p in patterns.SAFETY_BYPASS]
 _PRIVATE = [re.compile(p) for p in patterns.PRIVATE_DATA]

@@ -4,7 +4,6 @@ import os
 import re
 import time
 import calendar
-import math
 from datetime import datetime, time as datetime_time, timedelta
 from pathlib import Path
 
@@ -21,37 +20,13 @@ from scripts.maintenance_rag import (
     serialize_evidence, validate_answer,
 )
 from jm_rag.guardrails import input_guard, names, output_guard
+from jm_rag.observability import api_cost_rates, estimate_api_cost  # noqa: F401 (tests import estimate_api_cost from app)
 from jm_rag.guardrails.sanitize import sanitize_message, sanitize_source, sanitize_sources
 from scripts.chat_history import (
     append_chat_turn, create_chat, delete_chat, ensure_chat_schema,
     list_chats, load_chat_messages,
 )
 from scripts.ocr_review import ensure_review_table, list_reviews, open_connection, save_review
-
-
-def api_cost_rates(model):
-    input_rate = os.getenv("OPENAI_INPUT_COST_PER_1M_USD")
-    output_rate = os.getenv("OPENAI_OUTPUT_COST_PER_1M_USD")
-    if input_rate is not None or output_rate is not None:
-        if input_rate is None or output_rate is None:
-            return None
-        try:
-            rates = float(input_rate), float(output_rate)
-        except ValueError:
-            return None
-        return rates if all(math.isfinite(rate) and rate >= 0 for rate in rates) else None
-    if not os.getenv("OPENAI_BASE_URL") and model == "gpt-4o-mini":
-        return 0.15, 0.60
-    return None
-
-
-def estimate_api_cost(usage, model):
-    rates = api_cost_rates(model)
-    if usage is None or rates is None:
-        return None
-    input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
-    output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
-    return (input_tokens * rates[0] + output_tokens * rates[1]) / 1_000_000
 
 
 def show_evidence(sources):

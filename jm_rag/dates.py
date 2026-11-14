@@ -50,6 +50,13 @@ def parse_date_window(question: str) -> tuple[date, date] | None:
 
     month_names = ("january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|"
                    "august|aug|september|sept?|october|oct|november|nov|december|dec")
+    cross_year = _CROSS_YEAR_RANGE.search(question)
+    if cross_year:
+        first_month, first_year = MONTH_NUMBERS[cross_year.group(1).casefold()], int(cross_year.group(2))
+        last_month, last_year = MONTH_NUMBERS[cross_year.group(3).casefold()], int(cross_year.group(4))
+        if (last_year, last_month) < (first_year, first_month):
+            return None
+        return date(first_year, first_month, 1), date(last_year + (last_month == 12), last_month % 12 + 1, 1)
     month_range = re.search(
         rf"\b({month_names})\s*(?:-|–|—|to|through|until)\s*({month_names})\s*(20\d{{2}})\b",
         question, re.I,
@@ -122,6 +129,8 @@ def resolve_partial_work_order_date(question: str, year: int) -> str:
 _MONTH_NAMES = ("january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|"
                 "august|aug|september|sept?|october|oct|november|nov|december|dec")
 _RANGE_JOIN = r"(?:-|\u2013|\u2014|to|through|until)"
+# "July 2024 to August 2025": a month and year on both ends, read as the first day of the first month up to the end of the last
+_CROSS_YEAR_RANGE = re.compile(rf"\b({_MONTH_NAMES})\s*(20\d{{2}})\s*{_RANGE_JOIN}\s*({_MONTH_NAMES})\s*(20\d{{2}})\b", re.I)
 _MONTH_THEN_YEARS = re.compile(rf"\b({_MONTH_NAMES})\s*(20\d{{2}})\s*{_RANGE_JOIN}\s*(20\d{{2}})\b", re.I)
 _YEAR_THEN_MONTH_YEAR = re.compile(rf"\b(20\d{{2}})\s*{_RANGE_JOIN}\s*({_MONTH_NAMES})\s*(20\d{{2}})\b", re.I)
 _EXPLICIT_SHAPES = (
@@ -157,6 +166,10 @@ def date_clarification(question: str) -> str | None:
             except (KeyError, ValueError):
                 return (f"I could not read `{match.group(0)}` as a date because that day does not exist. "
                         "Which date do you mean?")
+    cross = _CROSS_YEAR_RANGE.search(question)
+    if cross and (int(cross.group(4)), MONTH_NUMBERS[cross.group(3).casefold()]) < (int(cross.group(2)), MONTH_NUMBERS[cross.group(1).casefold()]):
+        return f"`{cross.group(0)}` ends before it starts. Which period do you mean?"
+    question = _CROSS_YEAR_RANGE.sub(" ", question)  # a full month-to-month range is readable; look at the rest
     mixed = _MONTH_THEN_YEARS.search(question)
     if mixed:
         month, first, last = _month_label(mixed.group(1)), mixed.group(2), mixed.group(3)

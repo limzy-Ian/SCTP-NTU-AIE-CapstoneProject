@@ -208,3 +208,9 @@ Items 6 and 7 were done earlier. Each fix flipped its pinned `ODD:` test deliber
 - New false positives: none found in the legitimate list. Two things to watch: the part-number prefix limit in item 2 and the OCR text label, which makes every OCR description in an incident table appear in quotes.
 - `retrieval.py` still has two unused locals (`exact_work_order_date`, `work_order_intent`). `conflicts.py` is 307 lines and `pipeline.py` 270.
 - `app.py` still uses its own older flow, so none of these fixes reach the Streamlit app until Phase 6 wires `answer_question` in.
+
+## Phase 4b follow-up: month-to-month ranges across a year boundary
+
+- `dates.parse_date_window` now reads a month and year on both ends ("July 2024 to August 2025", "Jul 2024 - Mar 2025", "jul2024 - mar2025", also en and em dashes, "through", "until"). The window runs from the first day of the first month to the end of the last month. The pipeline, the retrieval filter and the computed facts all use it, so "work orders July 2024 to August 2025" is answered, not asked about.
+- A range that ends before it starts ("August 2025 to July 2024") gives no window and a clarifying question. The mixed forms from fix 1 ("July 2024 to 2025", "2024 to July 2025") still ask; the check for them no longer misreads the year inside a full range as a stray year. An impossible day next to a full range still asks about the day.
+- `tests/test_cross_year_ranges.py`: 11 tests. This also closes the gap listed under fix 1 in the Phase 4b step 3 entry.

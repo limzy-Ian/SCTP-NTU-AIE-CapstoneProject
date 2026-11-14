@@ -5,7 +5,7 @@ import calendar
 import re
 from datetime import date, timedelta
 
-from jm_rag.config import MONTH_NUMBERS
+from jm_rag.config import DATA_END, MONTH_NUMBERS
 from jm_rag.intents import is_work_order_table_request
 
 
@@ -143,6 +143,23 @@ _EXPLICIT_SHAPES = (
 
 def _month_label(name: str) -> str:
     return calendar.month_name[MONTH_NUMBERS[name.casefold()]]
+
+
+def resolve_relative_periods(question: str) -> str:
+    """Relative periods are read against the end of the data (assumption A14): the data ends on 30 Jun 2026, so
+    "this year" is 2026, "last year" 2025, "this month" June 2026 and "last month" May 2026."""
+    end = DATA_END
+    previous_month = date(end.year - (end.month == 1), (end.month - 2) % 12 + 1, 1)
+    replacements = (
+        (r"\b(?:in\s+|during\s+|for\s+)?(?:the\s+)?(?:last|previous|past)\s+year\b", f"in {end.year - 1}"),
+        (r"\b(?:in\s+|during\s+|for\s+)?this\s+year\b|\b(?:so far\s+)?this\s+calendar\s+year\b|\byear to date\b|\bytd\b",
+         f"in {end.year}"),
+        (r"\b(?:in\s+|during\s+)?(?:the\s+)?(?:last|previous|past)\s+month\b", f"{calendar.month_name[previous_month.month]} {previous_month.year}"),
+        (r"\b(?:in\s+|during\s+)?this\s+month\b", f"{calendar.month_name[end.month]} {end.year}"),
+    )
+    for pattern, replacement in replacements:
+        question = re.sub(pattern, replacement, question, flags=re.I)
+    return question
 
 
 def date_clarification(question: str) -> str | None:

@@ -33,9 +33,11 @@ from jm_rag.pipeline import answer_question  # noqa: E402
 EVALS = Path(__file__).parent
 OUT = EVALS / "out"
 SPEND_LOG = ROOT / "logs" / "spend.jsonl"
-SETS = {"main": "cases.yaml", "manager": "manager_cases.yaml", "legit": "legit_regression.yaml", "offline": "offline_cases.yaml"}
-MODE_SETS = {"offline": ["offline", "main", "manager", "legit", "hostile"],
-             "retrieval": ["main", "manager", "legit", "hostile"], "e2e": ["main", "manager"]}
+SETS = {"main": "cases.yaml", "added": "added_cases.yaml", "manager": "manager_cases.yaml", "legit": "legit_regression.yaml",
+        "offline": "offline_cases.yaml"}
+MODE_SETS = {"offline": ["offline", "main", "added", "manager", "legit", "hostile"],
+             "retrieval": ["main", "added", "manager", "legit", "hostile"], "e2e": ["main", "added", "manager"]}
+OCR_LABEL = "OCR data error, fix via OCR Review"
 DEFAULT_CAP_USD = 1.0
 ASSUMED_RATES = (0.15, 0.60)          # USD per 1M tokens, only used to project a cost when none is configured
 ASSUMED_COMPLETION_TOKENS = 150
@@ -166,7 +168,7 @@ def select(args) -> list[dict]:
     cases = []
     for name in chosen:
         for case in load_set(name):
-            if args.mode == "offline" and name in ("main", "manager") and not case.get("no_llm"):
+            if args.mode == "offline" and name in ("main", "added", "manager") and not case.get("no_llm"):
                 continue        # data-dependent cases need the live corpus; offline keeps the refusals
             cases.append(case)
     if args.file:
@@ -225,6 +227,10 @@ def main() -> int:
             print("Projected cost is above the cap. Nothing was run. Ask the owner, then re-run with --yes.")
             return 2
 
+    ocr_wrong = set()
+    if args.mode != "offline":
+        from scripts.ocr_accuracy_report import disagreements
+        ocr_wrong = disagreements()
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     print(f"{'id':<6}{'set':<9}{'tier':<5}{'expect':<9}{'got':<9}{'result':<7}{'calls':>6}{'tokens':>10}{'USD':>9}{'ms':>7}")
     results = []
@@ -242,10 +248,13 @@ def main() -> int:
         if args.mode == "e2e":
             log_spend(case, args.mode, model, usage)
         last = runs[-1]
+        ocr_hits = sorted(set(case.get("ocr_fields", [])) & ocr_wrong) if fails else []
+        if ocr_hits:
+            fails.append(f"{OCR_LABEL} ({len(ocr_hits)} field(s) wrong in OCR: {', '.join(ocr_hits)})")
         record = {"id": case["id"], "set": case["set"], "tier": case.get("tier", 1), "expect": case.get("expect", "any"),
                   "outcome": last["outcome"], "passed": not fails, "fails": fails, "usage": usage, "ms": max(r["ms"] for r in runs),
                   "cited": last["cited_ids"], "notes": len(last["notes"]), "answer": last["answer"],
-                  "evidence_only": last.get("evidence_only", [])}
+                  "evidence_only": last.get("evidence_only", []), "ocr_error": bool(ocr_hits)}
         results.append(record)
         shown_cost = "n/a" if usage["cost_usd"] is None else f"{usage['cost_usd']:.4f}"
         print(f"{record['id']:<6}{record['set']:<9}{record['tier']:<5}{str(record['expect']):<9}{record['outcome']:<9}"
@@ -290,6 +299,9 @@ def summarise(results: list[dict], args, stamp: str) -> int:
         tier2 = [r for r in results if r["tier"] == 2 and r["set"] == "main"]
         if tier2 and sum(r["passed"] for r in tier2) / len(tier2) < 0.9:
             gating_failures.append("tier 2 below 90%")
+    ocr_failures = [r["id"] for r in results if not r["passed"] and r.get("ocr_error")]
+    if ocr_failures:
+        print(f"{OCR_LABEL}: {', '.join(ocr_failures)}")
     if gating_failures:
         print("GATING FAILURES: " + ", ".join(gating_failures))
     if other:

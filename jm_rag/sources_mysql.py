@@ -9,7 +9,7 @@ import mysql.connector
 
 from jm_rag.common import _source
 from jm_rag.config import ASSET_PATTERN
-from jm_rag.sensors import build_sensor_monthly_trend_sources
+from jm_rag.sensors import build_sensor_monthly_trend_sources, build_sensor_shift_sources
 from scripts.ocr_review import effective_record, ensure_review_table, open_connection
 
 
@@ -198,6 +198,14 @@ def _load_mysql_sources(sources: list[dict], warnings: list[str]) -> set[str]:
                 ORDER BY machine_id, month_utc""",
                 "monthly sensor trends", warnings)
             sources.extend(build_sensor_monthly_trend_sources(monthly_sensor_rows))
+            # Day and night by month. Shift hours are an assumption: day 07:00-18:59, night 19:00-06:59, Singapore time
+            # (UTC+8). The CMMS does not record shift times.
+            shift_rows = _query_rows(cursor, """SELECT machine_id, DATE_FORMAT(timestamp_utc, '%Y-%m') AS month_utc,
+                CASE WHEN HOUR(DATE_ADD(timestamp_utc, INTERVAL 8 HOUR)) BETWEEN 7 AND 18 THEN 'day' ELSE 'night' END AS shift,
+                COUNT(*) AS reading_count, AVG(vib_rms_mms) AS vibration_mean_mms, AVG(temperature_c) AS temperature_mean_c
+                FROM sensor_readings GROUP BY machine_id, month_utc, shift ORDER BY machine_id, month_utc, shift""",
+                "sensor readings by shift", warnings)
+            sources.extend(build_sensor_shift_sources(shift_rows))
             issues = _query_rows(cursor, """SELECT issue_code, COUNT(*) AS issue_count
                 FROM sensor_quality_issues GROUP BY issue_code ORDER BY issue_code""", "sensor quality issues", warnings)
             if issues:

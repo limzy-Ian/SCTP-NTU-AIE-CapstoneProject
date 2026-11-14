@@ -17,12 +17,13 @@ from jm_rag.intents import is_history_table_request, is_work_order_table_request
 from jm_rag.tags import DOCUMENT_WORDS, question_tags, question_word_machines, sensor_tags
 
 
+SHIFT_WORDS = re.compile(r"\b(?:night|day)\s*shifts?\b|\bat night\b|\bduring the (?:night|day)\b|\bovernight\b|\bby day\b", re.I)
 STRICT_SENSOR = re.compile(r"\b(?:sensors?|vibrat\w*|temperatures?|time.series|readings?|running off|runs? off|drift\w*)\b", re.I)
 WO_TYPES = (("breakdown", "BREAK"), ("preventive", "PREV"), ("corrective", "CORR"))
 FAMILY = {"document": "doc", "nameplate": "plate", "processed_nameplate": "plate", "processed_ocr_text": "plate",
           "tabular": "spares", "incident": "incident", "incident_ocr": "incident", "processed_incident": "incident",
           "work_order": "work_order", "sensor_summary": "sensor", "sensor_trend_monthly": "sensor",
-          "processed_sensor_summary": "sensor", "processed_sensor_gaps": "sensor"}
+          "processed_sensor_summary": "sensor", "processed_sensor_gaps": "sensor", "sensor_shift_monthly": "sensor"}
 
 
 def _work_order_type(question: str) -> str | None:
@@ -78,7 +79,7 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
         word_tags, ambiguous_words = question_word_machines(question, sources)
         tags |= word_tags
     incident_intent = bool(re.search(
-        r"\b(?:incidents?|near.miss(?:es)?|severity|lost.days|injur(?:y|ies))\b", question, re.I,
+        r"\b(?:incidents?|near.miss(?:es)?|severity|lost.days|injur(?:y|ies|ed)|hurt|accidents?)\b", question, re.I,
     ))
     combined_history_intent = work_order_intent and incident_intent and is_history_table_request(question)
     date_window = parse_date_window(question) if (work_order_intent or incident_intent) else None
@@ -91,7 +92,8 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
     report_keys = {f"IR-{year}-{int(number)}" for year, number in report_matches}
     preferred_types = set()
     part_numbers = {str(s.get("title", "")).rsplit(" / ", 1)[-1].upper() for s in sources if s.get("source_type") == "tabular"}
-    if re.search(r"\b(?:spares?|stock|part number|inventory|lead time|minimum quantity)\b", question, re.I) or any(
+    if re.search(r"\b(?:spares?|stock|part number|inventory|lead time|minimum quantity|reorder\w*|below min\w*|out of stock|"
+                 r"running (?:out|low))\b|\border\b.{0,30}\b(?:urgent\w*|anything|soon|now)\b", question, re.I) or any(
             re.search(rf"(?<![\w-]){re.escape(part)}(?![\w-])", question, re.I) for part in part_numbers if part):
         preferred_types.add("tabular")
     # sensor words match by stem, so "vibrating", "vibrates" and "temperatures" count
@@ -103,6 +105,8 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
         r"more|less|higher|lower|worse|climb\w*|drift\w*)\b",
         question, re.I,
     ))
+    if sensor_intent and SHIFT_WORDS.search(question):
+        preferred_types.add("sensor_shift_monthly")
     if sensor_intent:
         if sensor_trend_intent:
             preferred_types.add("sensor_trend_monthly")
@@ -110,7 +114,7 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
             preferred_types.update({"sensor_summary", "processed_sensor_summary", "processed_sensor_gaps"})
         if not sensor_trend_intent and re.search(r"\b(?:audit|completeness|data quality|sensor csv)\b", question, re.I):
             preferred_types.add("processed_audit")
-    if re.search(r"\b(?:incident|near.miss|severity|lost.days|injur(?:y|ies))\b", question, re.I):
+    if re.search(r"\b(?:incident|near.miss|severity|lost.days|injur(?:y|ies|ed)|hurt|accidents?)\b", question, re.I):
         preferred_types.update({"incident", "incident_ocr", "processed_incident"})
     if work_order_intent and partial_work_order_date(question):
         return None

@@ -14,7 +14,9 @@ import time
 
 from jm_rag import conflicts as conflict_rules
 from jm_rag import observability, validator
-from jm_rag.dates import date_clarification, partial_work_order_date, resolve_partial_work_order_date
+from jm_rag.dates import (
+    date_clarification, partial_work_order_date, resolve_partial_work_order_date, resolve_relative_periods,
+)
 from jm_rag import gaps
 from jm_rag.facts import facts_source
 from jm_rag.followup import resolve_followup
@@ -77,9 +79,14 @@ def ambiguous_word(question: str, sources: list[dict]) -> tuple[str, list[str]] 
     if plan is None or plan.tags:
         return None
     for word, owners in sorted(plan.ambiguous_words.items()):
-        if re.search(rf"\bthe\s+{re.escape(word)}\b(?!s)", question, re.I):
+        # "the lathe?" or "the crane is" names a machine; "the crane sling" uses the word to describe something else
+        if re.search(rf"\bthe\s+{re.escape(word)}(?!s)\b(?=\s*(?:[?.!,;:]|$|{MACHINE_FOLLOWERS}\b))", question, re.I):
             return word, sorted(owners)
     return None
+
+
+MACHINE_FOLLOWERS = (r"(?:is|was|are|has|have|had|does|did|do|on|in|at|for|with|and|or|now|today|running|doing|"
+                     r"working|been|status|condition|history)")
 
 
 def _call_model(client, model, messages, step, usage, trace, max_tokens):
@@ -248,6 +255,7 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         retrieval_question = resolve_followup(question, previous)
     elif not any(character.isdigit() for character in question):
         retrieval_question = (previous + " " + question).strip()
+    retrieval_question = resolve_relative_periods(retrieval_question)   # "last year" is 2025 (A14)
     aggregate = is_aggregate_question(retrieval_question)
     # "I am servicing CNC-02, which procedure applies and what oil" is not a request for a service-history table
     other_topic = bool(DOCUMENT_WORDS.search(question) or LUBE_WORDS.search(question))

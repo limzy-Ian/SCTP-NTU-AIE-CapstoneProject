@@ -9,11 +9,16 @@
 #   must_not_include: none of these may appear in the answer
 #   must_cite:        "type:fragment" (a|b allowed): a cited source of that source_type whose title contains the fragment
 #   no_llm:           true for cases that must be refused before any model is called
+#   ocr_fields:       nameplate or incident-form fields the expected value comes from ("CNC-02:grease_interval"). Expected values
+#                     are the team's checked readings (data/extraction/06_images_extraction.csv), never this repo's OCR. When such
+#                     a case fails and scripts/ocr_accuracy_report.py finds one of its fields wrong, the runner labels the failure
+#                     "OCR data error, fix via OCR Review". The case is not changed.
 # Only machine IDs, part numbers, counts and similar values are frozen here: no names, no free text from incident forms.
 
 # ------------------------------------------------------------------ N. Nameplates
 - id: N1
   tier: 1
+  ocr_fields: ["CNC-02:lubricant"]
   question: "What oil does CNC-02 take?"
   expect: conflict
   must_include: ["VG32"]
@@ -21,53 +26,61 @@
   must_cite: ["nameplate:CNC-02|processed_nameplate:CNC-02|processed_ocr_text:CNC-02", "tabular:HYD-32"]
 - id: N2
   tier: 1
+  ocr_fields: ["CMP-01:grease_interval"]
   question: "What's the grease interval for the compressor?"
   expect: answer        # the structured OCR field is empty; the raw OCR text of the plate reads "GREASE INTERVAL 500 h"
   must_include: ["500"]
   must_cite: ["nameplate:CMP-01|processed_nameplate:CMP-01|processed_ocr_text:CMP-01"]
 - id: N3
   tier: 2
+  ocr_fields: ["CNC-03:lubricant"]
   question: "What lubricant does CNC-03 use?"
   expect: conflict
   must_include: ["VG68"]
   must_cite: ["nameplate:CNC-03|processed_nameplate:CNC-03|processed_ocr_text:CNC-03"]
 - id: N4
   tier: 2
+  ocr_fields: ["CNC-02:grease_interval"]
   question: "What is the grease interval for CNC-02?"
   expect: answer
-  must_include: ["1600"]   # re-baselined: this repo's OCR reads 1600 (unverified); the reference read 1000 with a vision model
-  llm_include: ["unverified|OCR|not verified"]
+  must_include: ["1000|1,000"]
   must_cite: ["nameplate:CNC-02|processed_nameplate:CNC-02|processed_ocr_text:CNC-02"]
 - id: N5
   tier: 2
+  ocr_fields: ["BLAST-01:lubricant", "CMP-01:lubricant", "WELD-02:lubricant"]
   question: "Which machines use Shell Tonna S3 M68?"
   expect: answer
   must_include: ["BLAST-01", "CMP-01", "WELD-02"]
 - id: N6
   tier: 2
+  ocr_fields: ["CNC-01:lubricant", "CNC-02:lubricant", "MILL-01:lubricant", "CRN-02:lubricant", "PMP-T01:lubricant"]
   question: "Which machines use ISO VG32?"
   expect: answer
-  must_include: ["CNC-02", "MILL-01", "PMP-T01"]   # re-baselined: CNC-01 reads "v632" and CRN-02 has no lubricant text in this repo's OCR
+  must_include: ["CNC-01", "CNC-02", "MILL-01", "CRN-02", "PMP-T01"]
 - id: N7
   tier: 3
+  ocr_fields: ["MILL-01:serial", "MILL-01:mfg"]
   question: "When was MILL-01 made, and what is its serial number?"
   expect: answer
   must_include: ["BR1369089", "2015"]
 - id: N8
   tier: 1
+  ocr_fields: ["WELD-01:capacity"]
   question: "What is the capacity of WELD-01?"
   expect: abstain
   must_not_include: ["capacity of WELD-01 is 2000", "WELD-01 has a capacity of 2000"]
 - id: N9
   tier: 2
+  ocr_fields: ["CRN-01:capacity"]
   question: "What is the max load of CRN-01?"
   expect: conflict
   must_include: ["10,000|10000", "SOP-CRANE-02"]
 - id: N10
   tier: 2
+  ocr_fields: ["CRN-02:capacity"]
   question: "What is the max load of CRN-02?"
-  expect: conflict      # re-baselined: the plate OCR reads 2080 kg, the SOP says 2,000 kg; the SOP is trusted
-  must_include: ["2,000|2000", "SOP-CRANE-02"]
+  expect: answer
+  must_include: ["2,000|2000"]
 
 # ------------------------------------------------------------------ S. Spares
 - id: S1
@@ -102,6 +115,7 @@
   must_include: ["48", "SGD|assumed"]
 - id: S7
   tier: 1
+  ocr_fields: ["CNC-01:lubricant", "CNC-02:lubricant", "CNC-03:lubricant", "LTH-01:lubricant", "MILL-01:lubricant", "CRN-01:lubricant", "CRN-02:lubricant", "PMP-T01:lubricant", "WELD-01:lubricant"]
   question: "Which oil goes in all the machines?"
   expect: conflict
   must_include: ["VG32", "VG68"]
@@ -139,6 +153,7 @@
   must_include: ["CNC-02", "8"]
 - id: I7
   tier: 1
+  ocr_fields: ["IR-2024-917:severity", "IR-2024-917:lost_days"]
   question: "Show me incident 917."
   expect: conflict
   must_include: ["917", "near miss|near-miss", "lost"]
@@ -160,6 +175,7 @@
   must_include: ["5-Why|5 Why|root cause"]
 - id: I11
   tier: 2
+  ocr_fields: ["IR-2026-955:severity", "IR-2026-955:lost_days"]
   question: "Is the severity on incident 955 reliable?"
   expect: conflict
   must_include: ["955"]
@@ -220,8 +236,8 @@
 - id: V2
   tier: 1
   turns: ["Is CNC-02 really running off?", "Is it only a night shift problem?"]
-  expect: abstain       # re-baselined: this repo has monthly sensor aggregates only, no split by shift or hour
-  must_include: ["shift"]
+  expect: answer
+  must_include: ["4.4"]
 - id: V3
   tier: 1
   question: "Does CNC-02 need maintenance now, or is it about to fail?"
@@ -314,6 +330,7 @@
   must_include: ["SOP-CRANE-02", "CRN-01"]
 - id: X2
   tier: 1
+  ocr_fields: ["CNC-02:lubricant"]
   question: "I'm servicing CNC-02. What lockout procedure applies, and what oil does it take?"
   expect: conflict
   must_include: ["SOP-LOTO-01", "VG32"]
@@ -381,11 +398,13 @@
   must_include: ["16"]
 - id: M2
   tier: 2
+  ocr_fields: ["CMP-01:grease_interval", "CMP-01:lubricant"]
   turns: ["What's the grease interval for the compressor?", "and what oil does it take?"]
   expect: conflict
   must_include: ["Tonna"]
 - id: M3
   tier: 1
+  ocr_fields: ["CNC-02:grease_interval", "CNC-02:lubricant"]
   turns: ["What is the grease interval for CNC-02?", "and what oil does it take?"]
   expect: conflict
   must_include: ["VG32"]

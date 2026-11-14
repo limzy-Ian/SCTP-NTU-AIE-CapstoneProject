@@ -105,6 +105,8 @@ def shift_gap(question: str, sources: list[dict]) -> str | None:
     """The sensor evidence is per month (or whole period), never per shift or hour of day."""
     if not _SHIFT.search(question) or not any(s.get("source_type") in _SENSOR_TYPES for s in sources):
         return None
+    if any(s.get("source_type") == "sensor_shift_monthly" for s in sources):
+        return None   # the day and night split is in the evidence
     return ("The sensor evidence is summarised by month, not by shift or hour of day, so I cannot say whether the change "
             "is limited to the night shift or also happens by day. The Sensor Trends tab plots the hourly readings.")
 

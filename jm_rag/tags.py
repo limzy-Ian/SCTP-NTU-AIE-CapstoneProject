@@ -14,7 +14,7 @@ from jm_rag.config import ASSET_PATTERN
 TAG_SHAPE = re.compile(r"(?<![\w-])([A-Za-z]{2,6})-([A-Za-z]?\d{2,3})(?![\w-])")
 # machine types the plant is known to have, used even when no loaded source carries a tag with that prefix
 LEGACY_PREFIXES = {"CNC", "CRN", "LTH", "MILL", "PMP", "WELD", "BLAST", "CMP"}
-SENSOR_TYPES = {"sensor_summary", "sensor_trend_monthly", "processed_sensor_summary", "processed_sensor_gaps"}
+SENSOR_TYPES = {"sensor_summary", "sensor_trend_monthly", "processed_sensor_summary", "processed_sensor_gaps", "sensor_shift_monthly"}
 
 
 def _tags_of(source: dict) -> set[str]:

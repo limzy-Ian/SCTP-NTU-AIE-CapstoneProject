@@ -27,6 +27,10 @@ _SCHEDULE = [re.compile(p) for p in patterns.SCHEDULE]
 
 _DATA_END_YM = (config.DATA_END.year, config.DATA_END.month)
 
+ASKING_ABOUT_ORDERING = re.compile(
+    r"^\s*(?:do|does|should|shall|must|would|will)\s+(?:we|i|you|they)\s+(?:need|have|want)\s+to\s+(?:order|reorder|buy|stock up)\b"
+    r"(?!.*\b(?:change|update|delete|remove|edit|insert|drop|truncate|set|mark|close|create)\b)")
+
 #: classes that the legacy ``input_refusal`` and answer-text checks use
 TEXT_CLASSES = ("SAFETY_BYPASS", "PRIVATE_DATA")
 
@@ -98,7 +102,10 @@ def check(question: str | None, has_history: bool = False) -> dict:
         return _refuse("TOO_LONG")
     low = q.lower()
 
+    asking = bool(ASKING_ABOUT_ORDERING.match(low))   # "do we need to order ..." asks a question, it gives no order
     for cls in _ORDER:
+        if cls == "WRITE_INTENT" and asking:
+            continue
         if _any(_COMPILED[cls], low):
             return _refuse(cls)
     cls = classify_text(low)

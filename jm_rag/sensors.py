@@ -58,3 +58,30 @@ def build_sensor_monthly_trend_sources(rows: list[dict]) -> list[dict]:
             asset_tag=machine_id, source_type="sensor_trend_monthly",
         ))
     return sources
+
+
+SHIFT_NOTE = ("Shift hours are assumed: day 07:00-18:59 and night 19:00-06:59 Singapore time; the CMMS does not record "
+              "shift times.")
+
+
+def build_sensor_shift_sources(rows: list[dict]) -> list[dict]:
+    """One source per machine: monthly mean vibration and temperature for the day and the night shift."""
+    grouped: dict[str, dict[str, dict[str, dict]]] = {}
+    for row in rows:
+        grouped.setdefault(row["machine_id"], {}).setdefault(str(row["month_utc"])[:7], {})[row["shift"]] = row
+    sources = []
+    for machine_id, months in grouped.items():
+        lines = [f"Day and night shift sensor means for machine {machine_id}, by UTC month, from MySQL sensor_readings. "
+                 f"{SHIFT_NOTE} Descriptive statistics, not a diagnosis."]
+        for month in sorted(months):
+            parts = []
+            for shift in ("day", "night"):
+                row = months[month].get(shift)
+                if row:
+                    parts.append(f"{shift} mean vibration {float(row['vibration_mean_mms']):.3f} mm/s, mean temperature "
+                                 f"{float(row['temperature_mean_c']):.2f} C ({row['reading_count']} readings)")
+            lines.append(f"{month}: " + "; ".join(parts) + ".")
+        sources.append(_source(f"{machine_id} / sensor by shift", "\n".join(lines),
+                               "MySQL: sensor_readings, grouped by UTC month and assumed shift", asset_tag=machine_id,
+                               source_type="sensor_shift_monthly"))
+    return sources

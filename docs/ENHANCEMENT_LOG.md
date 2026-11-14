@@ -256,3 +256,19 @@ Human decisions (Section 10), 14 Nov 2026: commit the eval cases with only machi
 - Modules over 300 lines: `conflicts.py` 334, `facts.py` 314, `pipeline.py` 309, `evals/run.py` 305. Each holds one concern; splitting further would scatter related rules.
 - `retrieval.py` has two unused locals (`exact_work_order_date`, `work_order_intent` in `retrieve`).
 - The `.env` points at the public OpenAI endpoint (`OPENAI_BASE_URL` empty, `gpt-4o-mini`), not a classroom endpoint; the projection uses the configured 0.15 / 0.60 rates.
+
+## Phase 5 corrections (human review, 14 Nov 2026)
+
+1. **No re-baselining to OCR errors.** The team's checked readings are at `data/extraction/06_images_extraction.csv` (git-ignored client data; never committed, copied into docs or tests, or printed with employee codes). N4, N6 and N10 are back to the reference values; V2 is back to the reference too. Every other nameplate and incident case was re-checked against the CSV and agrees with the reference. Cases now carry `ocr_fields`; when such a case fails and the OCR accuracy report finds one of its fields wrong, the runner labels it "OCR data error, fix via OCR Review". `docs/eval_rebaseline.md` was rewritten.
+2. **`scripts/ocr_accuracy_report.py`** compares the processed nameplate OCR (structured fields, and the raw OCR text next to the lubricant and grease labels) and the processed incident-form OCR (date, machine, severity, lost days, how reported) with the CSV. Employee codes and descriptions are never read out of the CSV rows. It prints counts by field and the machine or report IDs with the field names that disagree, never values. Its output is not committed. Tests use an invented reference file and check that no value or employee code is printed.
+3. **Fixes, each with new main-set cases in `evals/added_cases.yaml` (A1–A8) and unit tests in `tests/test_phase5_fixes.py`:**
+   - "the crane sling": a machine word shared by several machines asks which machine only when it stands as the noun ("the crane?", "the crane is ..."), not when it describes something else ("the crane sling", "the crane hook").
+   - Relative periods (A14): "last year" is 2025, "this year" and "year to date" 2026, "last month" May 2026, "this month" June 2026. "hurt", "injured" and "accident" are incident words.
+   - Ordering: "do we need to order anything urgently", "reorder", "running low", "below minimum" are spares questions. The input guard no longer refuses a question that asks whether to order ("Do we need to order any parts urgently?" was refused as a write); an instruction to order is still refused.
+   - Day/night split for V2: a new MySQL source per machine with monthly day and night means. Shift hours are assumed (day 07:00–18:59, night 19:00–06:59, Singapore time) and the source says so.
+   - Manager set: its honest pre-fix retrieval score was 15/20. Three manager failures (Q6, Q8, Q20) led to these fixes, so the manager set is no longer fully held out. After the fixes it scores 18/20 in retrieval mode; the manager cases were not edited.
+4. The spares workbook was not printed again; only headers and counts.
+
+Results before e2e: unit tests 484, all pass. Offline: all sets pass, refusals 9/9 with no model call. Retrieval: main 66/69 (tier 1 29/29, tier 2 25/27, tier 3 12/13), added 8/8, manager 18/20, legitimate 72/72, hostile 40/40, refusals 8/8 with no model call. Failures: N4 and N10 (OCR data errors), X4, Q3, Q15.
+
+Known weakness: in retrieval mode N6 passes although the OCR misses CNC-01 and CRN-02, because those IDs appear elsewhere in the computed lubricant facts ("unreadable text", "no lubricant read"). `must_include` is a plain substring check; e2e checks the model's wording.

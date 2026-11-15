@@ -15,7 +15,8 @@ import time
 from jm_rag import conflicts as conflict_rules
 from jm_rag import observability, validator
 from jm_rag.dates import (
-    date_clarification, partial_work_order_date, resolve_partial_work_order_date, resolve_relative_periods,
+    date_clarification, partial_month, partial_work_order_date, resolve_partial_month,
+    resolve_partial_work_order_date, resolve_relative_periods,
 )
 from jm_rag import gaps
 from jm_rag.drafting import model_answer
@@ -180,6 +181,12 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
         text = (f"I read `{raw}` as {day} {calendar.month_name[month]}, but the year is missing. "
                 "Which year should I search? I haven't queried the work orders yet.")
         return _finish(started, usage, trace, errors, answer=text, outcome="clarify", flags=flags)
+    bare_month = partial_month(question)
+    if bare_month:   # "work orders for Nov": a month needs a year, so ask instead of listing the newest rows
+        month, raw = bare_month
+        text = (f"I read `{raw}` as {calendar.month_name[month]}, but the year is missing. "
+                "Which year should I search? I haven't queried the work orders yet.")
+        return _finish(started, usage, trace, errors, answer=text, outcome="clarify", flags=flags)
     unclear_date = date_clarification(question)
     if unclear_date:
         return _finish(started, usage, trace, errors, answer=unclear_date, outcome="clarify", flags=flags)
@@ -195,6 +202,8 @@ def answer_question(question, history, corpus, client, *, model=None, max_tokens
     if re.fullmatch(r"20\d{2}", question.strip()):
         if partial_work_order_date(previous):
             retrieval_question = resolve_partial_work_order_date(previous, int(question.strip()))
+        elif partial_month(previous):
+            retrieval_question = resolve_partial_month(previous, int(question.strip()))
     elif resolve_followup(question, previous):
         retrieval_question = resolve_followup(question, previous)
         topic_question = retrieval_question   # "and CNC-03?" carries the previous topic into conflicts and notes

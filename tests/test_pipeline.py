@@ -87,6 +87,8 @@ EXAMPLE_CASES = [
     ("refuse: model leaks a name (output guard)", "what lubricant does TST-01 take", plain_corpus,
      lambda: MockClient([f"It was {ZED_NAME} [S1]"]), "refuse", "OUTPUT_GUARD", 1, []),
     ("clarify: partial work-order date", "work orders on 26 July", plain_corpus, ForbiddenClient, "clarify", None, 0, []),
+    ("clarify: month without a year", "list the work orders for month of Nov", plain_corpus, ForbiddenClient, "clarify", None, 0,
+     ["year is missing"]),
     ("clarify: alias maps to several machines", "work orders for the Lathe Alpha 100", lathe_clash_corpus, ForbiddenClient, "clarify", None, 0, []),
     ("abstain: no evidence", "incidents in September 2019", plain_corpus, ForbiddenClient, "abstain", None, 0, []),
     ("abstain: future date", "incidents in July 2026", plain_corpus, ForbiddenClient, "abstain", None, 0, [notes.FUTURE_NOTE]),

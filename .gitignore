@@ -21,3 +21,11 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 .DS_Store
+
+# reference copy of RAG_Capstone (read-only study material, never commit)
+reference/
+
+# eval and request logs
+evals/out/
+logs/
+.pytest_cache/

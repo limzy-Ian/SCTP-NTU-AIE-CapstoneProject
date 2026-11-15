@@ -6,15 +6,38 @@ customer on **Sat 21 Nov 2026**.
 
 ## Quick start
 
-```bash
+Windows PowerShell, from a clean clone to a running app. Each step is explained in [docs/setup-windows.md](docs/setup-windows.md); on Mac or Linux use `python3 -m venv .venv`, `source .venv/bin/activate`, `cp` and `<` instead.
+
+Prerequisites: Python 3, Docker Desktop, and [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) (default path `C:\Program Files\Tesseract-OCR\tesseract.exe`, or set `TESSERACT_CMD` in `.env`).
+
+```powershell
 git clone https://github.com/fde-sctp-aieng-PT-Cohort1/team7_jurong_marine.git
 cd team7_jurong_marine
-python3 -m venv .venv && source .venv/bin/activate
-cp .env.example .env          # paste in your team API key (handed out at the briefing)
-# download your team zip from NTULearn and unzip into data/  (see data/README.md)
-docker compose up -d          # local MySQL — or use MySQL Workbench directly
-docker compose exec -T mysql mysql -uroot -pcapstone < data/sql/<dump>.sql
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-chatbot.txt -r requirements-eval.txt
+Copy-Item .env.example .env        # add the team API key; prices and budgets are optional (see below)
+# Unzip the team package from NTULearn into data\ (docs, images, logs, sql, tabular). See data\README.md.
+
+# 1. Database
+docker compose up -d
+cmd /c "docker compose exec -T mysql mysql -uroot -pcapstone < data\sql\jurongmarine_cmms.sql"
+
+# 2. Derived data: OCR staging, processed OCR and sensor tables (local only, git-ignored)
+python scripts/nameplate_ocr_import.py
+python scripts/ingest_incident_reports.py --images-dir data/images/incident_reports --commit
+python scripts/sensor_csv_to_mysql.py --input data/logs/vibration_temp_2026H1.csv --load-mysql
+
+# 3. Name screening list (read-only query on employees; prints counts only)
+python -m scripts.build_guard_terms
+
+# 4. Check and run
+python -m unittest discover -s tests
+python -m evals.run --mode offline
+python -m streamlit run app.py
 ```
+
+The app opens at http://localhost:8501 with three tabs: Assistant, OCR Review and Sensor Trends. Without an API key it still answers from code (tables and evidence lists) and says the AI endpoint is not configured.
 
 ## Rules of engagement
 
@@ -37,77 +60,92 @@ Briefing Sat 31 Oct · Week-1 checkpoint Thu 5 Nov · Week-2 checkpoint Sat 14 N
 
 Updated docker-compose.yml and shared instruction for "6. Load the database" and check with DBearver.
 
-## Maintenance chatbot prototype (Windows)
+## Maintenance assistant
+
+All commands below run from the repo root with the virtual environment (`.\.venv\Scripts\python.exe` or an activated `python`).
+
+The Assistant tab sends each question through `jm_rag.pipeline.answer_question`. Code decides what is refused, which caveats are shown, whether the model's draft is acceptable, and the outcome badge (Answer, Conflict, Cannot answer fully, Refused, Needs clarification, Source unavailable). The model only phrases answers from evidence that code retrieved (TF-IDF, no embeddings) and then checks. Work-order and incident tables are built by code without a model call. The assistant is read-only: it never writes to the CMMS tables. OCR corrections are made by a person in the OCR Review tab and stored separately in `ocr_review_decisions`; raw OCR and the CMMS tables are not changed. How it works: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+Documentation:
+
+| File | Contents |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Request pipeline and component diagrams; guardrails, validator, computed facts, fallbacks, cost monitoring, logs |
+| [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md) | Assumptions register and open questions for the client |
+| [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md) | Every data trap found and how the app handles it |
+| [docs/QUESTION_CATALOGUE.md](docs/QUESTION_CATALOGUE.md) | The eval questions with expected outcome and tier |
+| [docs/EVAL_RESULTS.md](docs/EVAL_RESULTS.md) | Latest eval results and spend |
+| [docs/MANUAL_DEMO_CHECK.md](docs/MANUAL_DEMO_CHECK.md) | Ten questions to check in the running app |
+| [docs/ENHANCEMENT_LOG.md](docs/ENHANCEMENT_LOG.md) | What changed in each phase, and why |
+| [docs/POSTMORTEM_DRAFT.md](docs/POSTMORTEM_DRAFT.md) | Post-mortem outline |
+
+### Tests
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements-chatbot.txt
-# Set MYSQL_* and your supplied OPENAI endpoint/model in .env; see .env.example.
-.\.venv\Scripts\python.exe scripts/nameplate_ocr_import.py --limit 12
 .\.venv\Scripts\python.exe -m unittest discover -s tests
-.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-`--dry-run` generates local evidence only. Without it the importer upserts raw
-OCR and parsed records into MySQL staging; it never changes the CMMS machines.
-Review image evidence before trusting any OCR specification. Reimporting replaces
-the staging extraction, not human-approved production data.
+No model and no network. Most tests use the invented fixture corpus in `tests/fixtures/`. A few use the local MySQL (the chat restart test) and are skipped when it is not reachable.
 
-The read-only chatbot retrieves live MySQL nameplate records joined to machines,
-and local SOP text using TF-IDF (no paid embedding service). Each response includes
-retrieved evidence and source citations. With no API key it displays evidence only.
-Use the classroom endpoint via `OPENAI_BASE_URL` and its supported `OPENAI_MODEL`;
-do not provision another paid service. Only selected evidence is sent to that endpoint.
+### Evals
 
-The assistant retrieves reviewed/unreviewed nameplate and incident OCR, CMMS machine,
-work-order and incident rows, SQL sensor aggregates, SOP text, critical-spares workbook
-rows, processed per-image OCR JSON/raw text, per-report incident OCR, processed sensor
-summaries/gaps, and curated data-quality audits. Processed OCR and MySQL are separate
-citations so discrepancies are visible. It deliberately omits employee names and IDs.
-Raw image files are linked as visual evidence to their OCR records; images without OCR
-are reported as image-only sources and are not interpreted by the LLM. The large sensor
-CSV is queried through MySQL aggregates and processed summaries, not expanded into
-per-reading prompts. The **Sensor Trends** tab plots hourly mean or maximum vibration
-RMS and temperature for selected machines and UTC date ranges, with gap counts beside
-the charts. These plots are descriptive, not equipment diagnoses; no alert thresholds
-or healthy-machine baselines are configured.
+```powershell
+.\.venv\Scripts\python.exe -m evals.run --mode offline                 # fixture corpus and a scripted mock model; no MySQL, no cost
+.\.venv\Scripts\python.exe -m evals.run --mode retrieval               # live MySQL and files, no model, no cost
+.\.venv\Scripts\python.exe -m evals.run --mode e2e --project-only      # prints the projected e2e cost; calls no model
+.\.venv\Scripts\python.exe -m evals.run --mode e2e --tier 1 --repeat 2 # live data and the model (costs money)
+```
 
-Persisted conversations, durable request traces/cost accounting, spreadsheet analytics,
-and comprehensive guardrail/evaluation coverage remain to be implemented.
-Citation validation checks source IDs, not factual entailment. Conversation state
-and token counts are persisted in the MySQL `chat_sessions` and `chat_messages` tables.
-Saved chats are selectable from the Assistant sidebar and can be deleted there. This
-local app has no user authentication, so saved conversations are shared with anyone
-who can access the same MySQL database. All real-world actions are out of scope; the
-app neither approves work nor modifies equipment records.
+`retrieval` and `e2e` need the name screening list (next section). An e2e run prints its projected cost first and stops if the projection is above `--cap` (default USD 1) unless `--yes` is given. Options, case format and gating rules: [evals/README.md](evals/README.md). Results are written to `evals/out/` (git-ignored).
 
-Use the **OCR Review** tab to inspect pending nameplate and incident extractions
-beside their source images. Enter reviewer name/initials, select a decision, and
-optionally enter field corrections as a JSON object (for example,
-`{"manufacturer":"CUSTOM"}`) before saving. Decisions and corrections are stored
-in `ocr_review_decisions`; raw OCR evidence and the CMMS master tables are unchanged.
-Only approved review values are marked human-verified in nameplate RAG evidence.
-Incident review is currently a QA queue; it does not change `safety_incidents` or
-add incident analytics to the chatbot.
+### Name screening list
 
-RAG reads the tables `machines`, `work_orders`, `safety_incidents`,
-`nameplate_assets_staging`, `incident_report_ocr`, `sensor_readings`, `sensor_gaps`,
-and `sensor_quality_issues` at question time. It reads `.txt`/`.md` files recursively
-from `data/docs`, row records from `data/tabular/*.xlsx`, and curated audit artifacts
-from `data/processed`. Sensor and incident requests are routed toward their structured
-SQL evidence; spare inventory requests toward workbook rows. Asset tags constrain the
-candidate set. Employee master data is not retrieved. If MySQL is unavailable, the app
-warns that live database evidence is incomplete rather than treating a stale CSV as
-the database result.
+```powershell
+.\.venv\Scripts\python.exe -m scripts.build_guard_terms
+```
 
-Work-order/service-history requests (for example, "show recent servicing for CNC-02")
-are rendered as a deterministic, newest-first table with per-row citations from
-`work_orders`; up to 10 matching rows are shown. Machine, exact date, month, and year
-filters are applied before ranking. For example, "PMP-T01 on 26 July 2024" returns the
-exact day, while "PMP-T01 in July 2024" returns the whole month. This path does not
-require an LLM call. Edit root-level [RAG_SKILL.md](RAG_SKILL.md) to adjust assistant
-response requirements; it is loaded for each question and is not indexed as client
-evidence. Safety, privacy, and source-validation checks remain enforced in code. The app
-sidebar's **What I can handle** expander lists supported requests and limitations.
+It reads employee names from MySQL (read-only) and writes `data/guard/name_terms.json` (git-ignored). It prints counts only. To screen a name of someone who is not in the `employees` table, add it on its own line to `data/guard/extra_terms.txt` (git-ignored; lines starting with `#` are ignored) and run the command again. Without the list the app still runs, but the sidebar warns that names cannot be screened.
+
+### Logs and the spend report
+
+- `logs/requests.jsonl`: one JSON line per question asked in the app, with the request and chat IDs, outcome, refusal class, source IDs and types, model calls, tokens, cost, timings and error count. It stores only the question's length and a short hash, never the question or answer text.
+- `logs/spend.jsonl`: one JSON line per eval case (or other non-chat use) that called the model, with mode, case ID, model, calls, tokens and cost.
+- Chat costs are stored with each answer in the MySQL `chat_messages` table.
+- `logs/` is git-ignored. The field lists are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#logs).
+
+```powershell
+.\.venv\Scripts\python.exe -m jm_rag.observability
+```
+
+This prints spend for today, the last 7 days and all time, split into chat, eval and other, plus the budget status and the five most expensive requests. The app shows the same figures in the Assistant sidebar ("Last answer cost", "Session total", "Today (all users and evals)") and the cost under each answer.
+
+### Environment variables
+
+| Variable | Needed | Meaning |
+|---|---|---|
+| `OPENAI_API_KEY` | for model answers | Without it the app answers from code only. |
+| `OPENAI_BASE_URL` | no | Empty means the OpenAI default URL. |
+| `OPENAI_MODEL` | no | Default `gpt-4o-mini`. |
+| `OPENAI_INPUT_COST_PER_1M_USD`, `OPENAI_OUTPUT_COST_PER_1M_USD` | for costs | Token prices in USD per 1M tokens. Without them, costs show as unknown, except for `gpt-4o-mini` on the default URL. |
+| `DAILY_BUDGET_USD` | no | Spend limit for the current UTC day, chat and evals together. |
+| `TOTAL_BUDGET_USD` | no | Spend limit for all time. |
+| `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD` | yes | Local MySQL (defaults in `.env.example`). |
+| `TESSERACT_CMD` | if Tesseract is not on the default path | Path to `tesseract.exe` for the OCR import scripts. |
+| `MAX_QUESTION_CHARS` | no | Longest question accepted (default 500). |
+| `OCR_REVIEWER` | no | Default reviewer initials in the OCR Review tab. |
+
+Budgets: leave both unset for no limit (the current setting). When one is set, the sidebar warns at 80% of it. At the limit the app stops calling the model and answers from code, with a note saying the model budget is used up. The limits apply to the app; eval runs use `--cap` instead.
+
+### OCR import and review
+
+`scripts/nameplate_ocr_import.py` (`--dry-run` writes local files only) and `scripts/ingest_incident_reports.py` (`--commit` writes to MySQL) read the images with Tesseract and write raw OCR and parsed records to the MySQL staging tables. They never change the CMMS tables. In the **OCR Review** tab a person compares each extraction with its image, approves, rejects or corrects it, and gives their initials. Only approved values are marked HUMAN-VERIFIED in the assistant's evidence; everything else is shown as unverified OCR. `python -m scripts.ocr_accuracy_report` compares the processed OCR with the team's checked reference readings (`data/extraction/`, git-ignored) and prints counts only.
+
+### Known limits
+
+- No user login. Saved chats are shared by everyone using the same MySQL database.
+- Retrieval is keyword-based (TF-IDF); a paraphrase with no shared words can miss evidence.
+- OCR values are often wrong until reviewed; see [docs/DATA_QUALITY.md](docs/DATA_QUALITY.md).
+- The sensor charts and summaries are descriptive. No alert thresholds are configured, and the app does not diagnose faults.
 
 ## Compare EasyOCR and Tesseract
 

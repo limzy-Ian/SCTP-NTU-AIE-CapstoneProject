@@ -1,25 +1,22 @@
 """Streamlit entry point for the read-only maintenance RAG prototype."""
 import json
 import os
-import re
 import time
-import calendar
-import math
 from datetime import datetime, time as datetime_time, timedelta
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
-from openai import OpenAI, OpenAIError
+from openai import OpenAI
 
-from scripts.maintenance_rag import (
-    ASSET_PATTERN, ROOT, format_combined_history_table, format_incident_table,
-    format_work_order_table, input_refusal, is_history_table_request,
-    is_work_order_table_request, load_sources, load_system_prompt,
-    partial_work_order_date, resolve_partial_work_order_date, retrieve,
-    serialize_evidence, validate_answer,
+from scripts.maintenance_rag import ASSET_PATTERN, ROOT, load_sources  # load_sources is patched through this module in tests
+from jm_rag.guardrails import input_guard, names
+from jm_rag.guardrails.sanitize import sanitize_message, sanitize_source
+from jm_rag.observability import (  # noqa: F401 (tests import estimate_api_cost from app)
+    api_cost_rates, budget_status, estimate_api_cost, log_request, spend_summary,
 )
+from jm_rag.pipeline import answer_question
 from scripts.chat_history import (
     append_chat_turn, create_chat, delete_chat, ensure_chat_schema,
     list_chats, load_chat_messages,
@@ -27,33 +24,9 @@ from scripts.chat_history import (
 from scripts.ocr_review import ensure_review_table, list_reviews, open_connection, save_review
 
 
-def api_cost_rates(model):
-    input_rate = os.getenv("OPENAI_INPUT_COST_PER_1M_USD")
-    output_rate = os.getenv("OPENAI_OUTPUT_COST_PER_1M_USD")
-    if input_rate is not None or output_rate is not None:
-        if input_rate is None or output_rate is None:
-            return None
-        try:
-            rates = float(input_rate), float(output_rate)
-        except ValueError:
-            return None
-        return rates if all(math.isfinite(rate) and rate >= 0 for rate in rates) else None
-    if not os.getenv("OPENAI_BASE_URL") and model == "gpt-4o-mini":
-        return 0.15, 0.60
-    return None
-
-
-def estimate_api_cost(usage, model):
-    rates = api_cost_rates(model)
-    if usage is None or rates is None:
-        return None
-    input_tokens = int(getattr(usage, "prompt_tokens", 0) or 0)
-    output_tokens = int(getattr(usage, "completion_tokens", 0) or 0)
-    return (input_tokens * rates[0] + output_tokens * rates[1]) / 1_000_000
-
-
 def show_evidence(sources):
     for source in sources:
+        source = sanitize_source(source)
         with st.expander(f"[{source['id']}] {source['title']}"):
             st.caption(source["location"])
             st.text(source["text"])
@@ -63,6 +36,97 @@ def show_evidence(sources):
                 image = ROOT / "data" / "images" / image_folder / filename
                 if image.is_file():
                     st.image(str(image))
+
+
+OUTCOME_BADGES = {
+    "answer": ("Answer", "green", "Answered from the records."),
+    "conflict": ("Conflict", "orange", "Sources disagree; the notes say which one is trusted and why."),
+    "abstain": ("Cannot answer fully", "violet", "The data cannot answer this; the notes say what is missing."),
+    "refuse": ("Refused", "red", "This request is not allowed."),
+    "clarify": ("Needs clarification", "blue", "Please answer the question below."),
+    "error": ("Source unavailable", "gray", "A source could not be checked."),
+}
+
+
+def _money(value) -> str:
+    return "cost unavailable" if value is None else f"${value:.6f}"
+
+
+def show_answer(content, outcome=None, cost_usd=None, tokens=0, calls=None):
+    """Outcome badge, the answer, the code-added notes in a visible box, and the cost of this answer."""
+    body, _, notes = str(content).partition("\n\nNotes:\n")
+    if outcome in OUTCOME_BADGES:
+        label, colour, hint = OUTCOME_BADGES[outcome]
+        st.markdown(f":{colour}-badge[{label}] <small>{hint}</small>", unsafe_allow_html=True)
+    st.markdown(body)
+    if notes.strip():
+        st.info("**Notes added by code**\n\n" + notes.strip())
+    if calls == 0 or (calls is None and not tokens):
+        st.caption("No model call for this answer (cost $0.000000).")
+    else:
+        st.caption(f"This answer: {tokens} tokens, {_money(cost_usd)}"
+                   + ("" if calls is None else f", {calls} model call(s)") + ".")
+
+
+class LazyClient:
+    """Creates the OpenAI client on the first model call, so a table or template answer never creates one."""
+
+    def __init__(self):
+        self._client = None
+        self.chat = self
+
+    @property
+    def completions(self):
+        return self
+
+    def create(self, **kwargs):
+        if self._client is None:
+            self._client = OpenAI(api_key=os.environ["OPENAI_API_KEY"],
+                                  base_url=os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1",  # empty in .env breaks the SDK
+                                  timeout=30, max_retries=1)
+        return self._client.chat.completions.create(**kwargs)
+
+
+def current_spend() -> dict:
+    """spend_summary() over the chat messages in MySQL and logs/spend.jsonl; the connection is closed again."""
+    connection = None
+    try:
+        connection = open_connection()
+        ensure_chat_schema(connection)
+    except Exception:  # noqa: BLE001 - the summary falls back to the log files
+        connection = None
+    try:
+        return spend_summary(connection=connection)
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def show_spend(model, cost_rates):
+    """Last answer, session and today's cost; budget use when a limit is set."""
+    summary = current_spend()
+    budget = budget_status(summary)
+    last = st.session_state.get("last_cost_usd")
+    st.caption(f"Model: {model}")
+    st.metric("Last answer cost", "n/a" if last is None and "last_cost_usd" not in st.session_state else _money(last))
+    st.metric("Session total", f"${st.session_state.api_cost_total_usd:.6f}" if cost_rates else "cost unavailable")
+    st.metric("Today (all users and evals)", f"${summary['today']['total_usd']:.6f}")
+    if cost_rates:
+        st.caption(f"Rates: ${cost_rates[0]:g} input / ${cost_rates[1]:g} output per 1M tokens.")
+    else:
+        st.caption("No price configured: tokens are counted, cost is unavailable. Set OPENAI_INPUT_COST_PER_1M_USD "
+                   "and OPENAI_OUTPUT_COST_PER_1M_USD.")
+    for key, label in (("daily", "Daily budget"), ("total", "Total budget")):
+        item = budget[key]
+        if item["limit"] is None:
+            continue
+        text = f"{label}: ${item['used']:.4f} of ${item['limit']:.2f} used, ${item['remaining']:.4f} left."
+        if item["state"] == "exceeded":
+            st.error(text + " The model budget is used up: answers come from code only.")
+        elif item["state"] == "warning":
+            st.warning(text + " Over 80% used.")
+        else:
+            st.caption(text)
 
 
 def render_review():
@@ -310,6 +374,8 @@ def render_chat():
             st.caption("CMMS records are read-only. OCR values require human review.")
             st.caption("Assistant guidance: RAG_SKILL.md is loaded on each question.")
             st.caption("Chat history is stored in MySQL and shared by users of this local database.")
+            if not names.terms_loaded():
+                st.warning("Name screening list not loaded: run scripts/build_guard_terms.py. Names cannot be screened until then.")
             with st.expander("What I can handle"):
                 st.markdown(
                     "**Service history**\n"
@@ -353,20 +419,10 @@ def render_chat():
                         st.session_state.active_chat_id = None
                         st.rerun()
             st.metric("Saved conversations", len(conversations))
-            st.caption(f"Model: {model}")
-            st.metric(
-                "Estimated API cost (session)",
-                f"${st.session_state.api_cost_total_usd:.6f}" if cost_rates else "Not configured",
-            )
-            if cost_rates:
-                st.caption(
-                    f"Rates: ${cost_rates[0]:g} input / ${cost_rates[1]:g} output per 1M tokens. "
-                    "Session total resets when this Streamlit session ends."
-                )
-            else:
-                st.caption("Set OPENAI_INPUT_COST_PER_1M_USD and OPENAI_OUTPUT_COST_PER_1M_USD for this endpoint/model.")
+            show_spend(model, cost_rates)
 
-        messages = load_chat_messages(connection, active_id) if active_id else []
+        messages = [sanitize_message(message) for message in
+                    (load_chat_messages(connection, active_id) if active_id else [])]
         connection.close()
         connection = None
     except Exception as error:
@@ -379,82 +435,38 @@ def render_chat():
     st.session_state.tokens = token_total
     for message in messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            if message["role"] == "assistant":
+                show_answer(message["content"], message.get("outcome"), message.get("cost_usd"),
+                            int(message.get("token_count", 0) or 0))
+            else:
+                st.markdown(message["content"])
             show_evidence(message.get("sources", []))
     question = st.chat_input("Ask about a machine or safety procedure")
     if not question:
         return
     history = [{"role": message["role"], "content": message["content"]}
                for message in messages[-6:]]
-    sources, warnings, tokens = [], [], 0
-    request_cost = None
     started = time.perf_counter()
-    answer = input_refusal(question)
-    ambiguous_date = partial_work_order_date(question)
-    if answer is None and ambiguous_date:
-        day, month, raw_date = ambiguous_date
-        answer = (f"I read `{raw_date}` as {day} {calendar.month_name[month]}, but the year is missing. "
-                  "Which year should I search? I haven't queried the work orders yet.")
-    if answer is None:
-        with st.spinner("Checking sources"):
-            corpus, warnings = load_sources()
-            retrieval_question = question
-            previous = next((item["content"] for item in reversed(history)
-                             if item["role"] == "user"), "")
-            if re.fullmatch(r"20\d{2}", question.strip()):
-                if partial_work_order_date(previous):
-                    retrieval_question = resolve_partial_work_order_date(previous, int(question.strip()))
-            elif not any(character.isdigit() for character in question):
-                retrieval_question = previous + " " + question
-            table_request = is_history_table_request(retrieval_question)
-            combined_history = bool(re.search(r"\b(?:incident|near.miss)\b", retrieval_question, re.I)
-                                    and re.search(r"\b(?:service|servicing|work.order|maintenance)\b", retrieval_question, re.I))
-            sources = retrieve(retrieval_question, corpus, limit=50 if combined_history else 10 if table_request else 5)
-            if not sources:
-                if combined_history:
-                    answer = "I couldn't find matching incident or service records for the requested period in MySQL."
-                elif table_request and is_work_order_table_request(retrieval_question):
-                    answer = "I couldn't find work orders matching the requested machine and date range in MySQL `work_orders`."
-                elif table_request:
-                    answer = "I couldn't find incident records matching the requested date range in the available sources."
-                else:
-                    answer = "I could not find evidence to answer that question. Specify an asset tag or SOP topic."
-            elif combined_history:
-                answer = format_combined_history_table(sources)
-            elif table_request and is_work_order_table_request(retrieval_question):
-                answer = format_work_order_table(sources)
-            elif table_request:
-                answer = format_incident_table(sources)
-            elif not os.getenv("OPENAI_API_KEY"):
-                answer = "The AI endpoint is not configured. Retrieved evidence is available below; no AI answer was generated."
-            else:
-                try:
-                    client = OpenAI(
-                        api_key=os.environ["OPENAI_API_KEY"],
-                        base_url=os.getenv("OPENAI_BASE_URL") or None,
-                        timeout=30, max_retries=1,
-                    )
-                    evidence = serialize_evidence(sources)
-                    response = client.chat.completions.create(
-                        model=model,
-                        temperature=0, max_tokens=700,
-                        messages=[{"role": "system", "content": load_system_prompt()}]
-                        + history + [{"role": "user", "content":
-                                      f"Question: {question}\nSource availability warnings: {warnings}\nRetrieved evidence:\n{evidence}"}],
-                    )
-                    answer = validate_answer(response.choices[0].message.content or "", sources)
-                    tokens = response.usage.total_tokens if response.usage else 0
-                    request_cost = estimate_api_cost(response.usage, model)
-                    if request_cost is not None:
-                        st.session_state.api_cost_total_usd += request_cost
-                except OpenAIError:
-                    answer = "The AI endpoint is unavailable. I could not generate an answer; review the retrieved evidence below."
-    for warning in warnings:
+    guard = input_guard.check(question, has_history=bool(history))
+    budget = budget_status(current_spend())
+    with st.spinner("Checking sources"):
+        # a refused question never loads evidence or reaches the model; the pipeline returns the refusal itself
+        corpus = ([], []) if guard["verdict"] == "refuse" else load_sources()
+        client = None
+        if guard["verdict"] != "refuse" and os.getenv("OPENAI_API_KEY") and not budget["blocked"]:
+            client = LazyClient()
+        response = answer_question(question, history, corpus, client, model=model, budget_blocked=budget["blocked"])
+    usage = response["usage"]
+    tokens = usage["prompt"] + usage["completion"]
+    if usage["cost_usd"] is not None:
+        st.session_state.api_cost_total_usd += usage["cost_usd"]
+    st.session_state.last_cost_usd = usage["cost_usd"] if usage["calls"] else 0.0
+    log_request(response, question, chat_id=active_id)
+    for warning in corpus[1]:
         st.warning(warning)
-    st.markdown(answer)
-    show_evidence(sources)
-    cost_text = f" / ~${request_cost:.6f}" if request_cost is not None else ""
-    st.caption(f"{len(sources)} sources / {time.perf_counter() - started:.1f}s / {tokens} API tokens{cost_text}")
+    show_answer(response["answer"], response["outcome"], usage["cost_usd"], tokens, calls=usage["calls"])
+    show_evidence(response["sources"])
+    st.caption(f"{len(response['sources'])} sources / {time.perf_counter() - started:.1f}s")
 
     try:
         connection = open_connection()
@@ -462,7 +474,8 @@ def render_chat():
         if active_id is None:
             active_id = create_chat(connection, question)
             st.session_state.active_chat_id = active_id
-        append_chat_turn(connection, active_id, question, answer, sources, tokens)
+        append_chat_turn(connection, active_id, question, response["answer"], response["sources"], tokens,
+                         cost_usd=usage["cost_usd"], outcome=response["outcome"])
         st.session_state.tokens = token_total + tokens
     except Exception as error:
         st.error(f"This response could not be saved to MySQL chat history: {error}")

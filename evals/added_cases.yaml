@@ -1,0 +1,41 @@
+# Main-set cases added in Phase 5 for fixes that a held-out manager case exposed (Q8, Q4, Q6, Q20) and for the shift
+# split (V2). Written for this repo; they are part of the main set for gating. The manager cases themselves are unchanged.
+- id: A1
+  tier: 1
+  question: "How many incidents were there last year?"
+  expect: answer
+  must_include: ["34"]
+- id: A2
+  tier: 1
+  question: "How many incidents have we had this year?"
+  expect: answer
+  must_include: ["16"]
+- id: A3
+  tier: 2
+  question: "How many work orders did CNC-02 have last year?"
+  expect: answer
+  must_include: ["59"]
+- id: A4
+  tier: 1
+  question: "Do we need to order any parts urgently?"
+  expect: answer
+  must_include: ["BRG-6310", "SEAL-KIT-KSB", "LS-CXT-11"]
+- id: A5
+  tier: 2
+  question: "What should we reorder soon?"
+  expect: answer
+  must_include: ["BRG-6310", "LS-CXT-11"]
+- id: A6
+  tier: 1
+  question: "What caused the crane sling near-miss?"
+  expect: abstain
+  expect_not: clarify
+- id: A7
+  tier: 2
+  question: "What's open on the crane?"
+  expect: clarify
+- id: A8
+  tier: 1
+  question: "Is the CNC-02 vibration rise only on the night shift?"
+  expect: answer
+  must_include: ["night", "day"]

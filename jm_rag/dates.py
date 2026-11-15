@@ -198,3 +198,36 @@ def date_clarification(question: str) -> str | None:
         return (f"`{reverse.group(0)}` mixes a year with a month. Do you mean January {first} to {month} {last}, "
                 f"or only {month} {last}?")
     return None
+
+
+# A month named with no day and no year, e.g. "work orders for the month of Nov". The pipeline asks which year
+# instead of listing the newest rows (a month needs a year to be searched).
+_BARE_MONTH = re.compile(
+    rf"\b(?:in|during|for|of|from|since)\s+(?:the\s+)?(?:(?:last|this|next|previous|past)\s+)?(?:month\s+of\s+)?"
+    rf"({_MONTH_NAMES})\b(?!\s*,?\s*\d)", re.I,
+)
+
+
+def partial_month(question: str) -> tuple[int, str] | None:
+    """A month with no year in a work-order question, as (month number, matched text), else None.
+
+    A year anywhere in the question, or a day ("26 July", read by ``partial_work_order_date``), means it is not
+    a bare month. A preposition must come before the month, so "May I see the work orders" does not count.
+    """
+    if not is_work_order_table_request(question):
+        return None
+    if re.search(r"\b20\d{2}\b", question) or partial_work_order_date(question):
+        return None
+    match = _BARE_MONTH.search(question)
+    if not match:
+        return None
+    return MONTH_NUMBERS[match.group(1).casefold()], match.group(0)
+
+
+def resolve_partial_month(question: str, year: int) -> str:
+    """Rewrite a bare month with its year: "for the month of Nov" + 2025 -> "in November 2025"."""
+    partial = partial_month(question)
+    if not partial:
+        return question
+    month, raw = partial
+    return question.replace(raw, f"in {calendar.month_name[month]} {year}", 1)

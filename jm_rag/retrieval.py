@@ -11,7 +11,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 from jm_rag.config import ASSET_PATTERN
 
 SPARES_LIST_QUESTION = re.compile(r"\b(?:spares?|parts?)\s+(?:do|does)\s+(?:we|you)\b|\b(?:hold|holding|keep|kept|carry)\b.{0,20}\bfor\b", re.I)
-from jm_rag.dates import date_clarification, parse_date_window, parse_explicit_date, partial_work_order_date
+from jm_rag.dates import (
+    date_clarification, parse_date_window, parse_explicit_date, partial_month, partial_work_order_date,
+)
 from jm_rag.incidents import INCIDENT_TYPES, group_incident_events
 from jm_rag.intents import is_history_table_request, is_work_order_table_request
 from jm_rag.tags import DOCUMENT_WORDS, question_tags, question_word_machines, sensor_tags
@@ -118,6 +120,8 @@ def plan_query(question: str, sources: list[dict]) -> Plan | None:
         preferred_types.update({"incident", "incident_ocr", "processed_incident"})
     if work_order_intent and partial_work_order_date(question):
         return None
+    if work_order_intent and partial_month(question):
+        return None   # a month with no year must be asked about
     if (work_order_intent or incident_intent) and date_clarification(question):
         return None  # an unreadable date must be asked about, not guessed (Phase 4b fix 1)
     exact_work_order_date = parse_explicit_date(question) if work_order_intent else None

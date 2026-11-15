@@ -340,3 +340,15 @@ These were found after the approved reruns and are not changed yet, so the resul
 - Live AppTest (real MySQL, real model for one question): "What is the serial number of MILL-01?" got Answer and the caption "This answer: 2310 tokens, $0.000358", with the sidebar metrics filled; the names-of-injured question got Refused with no model call; "Show work orders for CNC-99" got Cannot answer fully with no model call. No exceptions; three request-log lines with the right outcomes. The test chat was deleted afterwards.
 - No e2e run in this phase. Phase 6 model spend: USD 0.000358 (the one live AppTest answer).
 - `docs/MANUAL_DEMO_CHECK.md`: ten questions for a manual check in the running app, with the expected badge, notes and cost for each. The expected outcomes were checked against the real data with the model switched off.
+## Phase 7: documentation and evidence
+- New: `docs/ASSUMPTIONS.md`, `docs/QUESTION_CATALOGUE.md`, `docs/ARCHITECTURE.md` (2 Mermaid diagrams), `docs/DATA_QUALITY.md`, `docs/POSTMORTEM_DRAFT.md`. Rewritten: `docs/EVAL_RESULTS.md`. `README.md`: new Windows quick start (clean clone to running app), and sections on tests, evals, the name screening list, logs and the spend report, environment and budget variables, OCR import and review, and known limits. The old prototype section was replaced, because it said persisted chats and cost accounting were still to be done.
+- `docs/ASSUMPTIONS.md` is adapted from the reference register. Kept, in adapted form: A1 to A10, A11 (rewritten for this repo's model access), A14 and A15. Dropped: A12 (folded into A3), A13 and A16 (vision-model readings). Added: A17 (TF-IDF retrieval), A18 (Tesseract OCR and its measured accuracy), A19 (OCR review tables), A20 (name screening list), A21 (prices).
+- Checked against the code while writing. These differ from the reference or the plan:
+  - The shift hours in code are 07:00 to 18:59, not 07:00 to 19:00.
+  - "Recently" is not mapped to a date window; it means newest first.
+  - The order of trust is written into each conflict note, not into the prompt.
+  - `ocr_review_decisions` holds no decisions yet.
+  - The `DATA_END` comment in `jm_rag/config.py` says it is unused, but it is used. The comment was not changed.
+- `docs/QUESTION_CATALOGUE.md` is generated from the three case files (97 cases). Lubricant grades and brands, part numbers and employee codes in question wording are replaced by placeholders.
+- OCR accuracy, from `python -m scripts.ocr_accuracy_report` (counts only): 66 of 113 structured nameplate fields, 17 of 24 raw-text readings and 121 of 150 incident-form fields match.
+- No code changed and no case edited. Unit tests 536, all pass. Offline: all pass. Retrieval: main 64/69 (tier 1 29/29), 64/66 without N4, N6, N10; added 8/8; manager 18/20; legitimate 72/72; hostile 40/40; refusals 8/8. No e2e run; no model spend in this phase.

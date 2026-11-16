@@ -224,6 +224,36 @@ def _month_name(month: str) -> str:
     return date.fromisoformat(month + "-01").strftime("%b %Y")
 
 
+def _part_no(row: dict) -> str:
+    return str(row.get("Part No") or row.get("Part Number") or row.get("SKU") or "unknown part")
+
+
+def _stock_status(rows: list[dict]) -> list[str]:
+    """Clauses that give each part's stock against its minimum, worked out by code, for a store manager or an auditor.
+
+    Status is below, at or above the minimum quantity; a part with no readable quantity or minimum is "minimum not
+    recorded". Lead time and location are copied as the workbook writes them; they are not interpreted."""
+    status: dict[str, list[dict]] = {"below": [], "at": [], "above": [], "unknown": []}
+    for row in rows:
+        qty, minimum = _number(row.get("Qty")), _number(row.get("Min Qty"))
+        key = "unknown" if qty is None or minimum is None else "below" if qty < minimum else "at" if qty == minimum else "above"
+        status[key].append(row)
+    out = []
+    at = [_part_no(row) for row in status["at"]]
+    out.append(f"{len(at)} at exactly the minimum quantity" + (f" ({', '.join(at)})" if at else ""))
+    if len(rows) <= 12:
+        label = {"below": "below minimum", "at": "at minimum", "above": "above minimum", "unknown": "minimum not recorded"}
+        out.append("stock against minimum by part: " + ", ".join(
+            f"{_part_no(row)} stock {row.get('Qty', 'not recorded')} against minimum {row.get('Min Qty', 'not recorded')} "
+            f"is {label[key]}" for key in ("below", "at", "above", "unknown") for row in status[key]))
+    short = status["below"] + status["at"]
+    if short:
+        out.append("lead time and store location of the parts below or at minimum, as written in the workbook: " + ", ".join(
+            f"{_part_no(row)} lead time {row.get('Lead Time', 'not recorded')}, location {row.get('Location', 'not recorded')}"
+            for row in short))
+    return out
+
+
 def spares_facts(records: list[dict], scope: str) -> str | None:
     rows = []
     for source in records:
@@ -252,6 +282,7 @@ def spares_facts(records: list[dict], scope: str) -> str | None:
                                                   for row in rows))
     empty = [str(row.get("Part No")) for row in rows if _number(row.get("Qty")) == 0]
     parts.append(f"{len(empty)} out of stock (quantity 0)" + (f" ({', '.join(empty)})" if empty else ""))
+    parts += _stock_status(rows)
     if costs:
         parts.append(f"unit cost from {_money(min(costs))} to {_money(max(costs))} (the workbook states no currency; "
                      "SGD is assumed, not confirmed)")

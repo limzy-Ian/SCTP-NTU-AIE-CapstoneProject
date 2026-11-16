@@ -118,6 +118,26 @@ class SensorAndSparesFactTests(unittest.TestCase):
         self.assertIn("1 below minimum quantity (PN-FAKE-200)", text)
         self.assertIn("unit cost from 8.00 to 35.50", text)
 
+    def test_spares_stock_status_is_computed_per_part(self):
+        def spare(part, qty, minimum, lead, where, machine="TST-01"):
+            row = {"Part No": part, "Description": "x", "For Machine": machine, "Qty": qty, "Min Qty": minimum,
+                   "Unit Cost": "$10", "Lead Time": lead, "Location": where}
+            return {"title": f"spares.xlsx / {part}", "location": "spares.xlsx / Spares row 4", "asset_tag": machine,
+                    "source_type": "tabular", "text": "Workbook row. Source row: " + json.dumps(row)}
+
+        sources = [spare("PN-LOW", 1, 3, "6-8 weeks", "S1-A1"), spare("PN-EDGE", 2, 2, "local", "S1-A2"),
+                   spare("PN-OK", 9, 2, "1 wk", "S1-A3"), spare("PN-ZERO", 0, 1, "4 wks", "S2-C1")]
+        text = facts.spares_facts(sources, "all machines, any date")
+        self.assertIn("2 below minimum quantity (PN-LOW, PN-ZERO)", text)          # wording that key_figures relies on
+        self.assertIn("1 out of stock (quantity 0) (PN-ZERO)", text)
+        self.assertIn("1 at exactly the minimum quantity (PN-EDGE)", text)
+        self.assertIn("PN-LOW stock 1 against minimum 3 is below minimum", text)
+        self.assertIn("PN-EDGE stock 2 against minimum 2 is at minimum", text)
+        self.assertIn("PN-OK stock 9 against minimum 2 is above minimum", text)
+        self.assertIn("PN-LOW lead time 6-8 weeks, location S1-A1", text)
+        self.assertIn("PN-EDGE lead time local, location S1-A2", text)
+        self.assertNotIn("PN-OK lead time", text)                                     # only short-stock parts
+
     def test_a_lubricant_question_gets_lubricant_facts_only(self):
         # Changed in Phase 5: lubricant questions now get facts too (readable lubricant per nameplate). It used to
         # assert that a lubricant question had no facts source at all.

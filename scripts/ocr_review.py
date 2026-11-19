@@ -20,6 +20,15 @@ REVIEW_DDL = """CREATE TABLE IF NOT EXISTS ocr_review_decisions (
 
 def open_connection():
     import os
+    from jm_rag import config
+
+    env_path = config.ROOT / ".env"
+    if env_path.is_file():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
     return mysql.connector.connect(
         host=os.getenv("MYSQL_HOST", "127.0.0.1"),
@@ -29,7 +38,6 @@ def open_connection():
         password=os.getenv("MYSQL_PASSWORD", ""),
         connection_timeout=5,
     )
-
 
 def ensure_review_table(connection):
     cursor = connection.cursor()

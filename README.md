@@ -184,3 +184,5 @@ compared without filename fallback. Severity scale and scale source are separate
 fields. Shared confidence review thresholds are not calibrated for EasyOCR.
 Timing excludes model initialization/download, includes image decoding and parsing,
 and uses fixed engine order; repeat runs before drawing speed conclusions.
+#   S C T P - N T U - A I E - C a p s t o n e P r o j e c t  
+ 
